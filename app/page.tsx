@@ -70,16 +70,17 @@ export default function ReelsCutterPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-between py-20 px-6 font-sans overflow-hidden">
+    <main className="min-h-[100dvh] bg-[#050505] text-white flex flex-col items-center justify-between p-6 font-sans overflow-hidden">
       
-      {/* Top Logo Section */}
-      <div className="flex flex-col items-center z-10 text-center space-y-2">
+      {/* Top Logo Section - Pushed to absolute top */}
+      <div className="w-full mt-4 md:mt-8 flex flex-col items-center z-10 text-center space-y-2">
         <Image src="/logo.png" alt="Logo" width={110} height={35} className="mb-2 opacity-90" />
         <h1 className="text-[12px] tracking-[0.7em] font-bold uppercase italic text-white">Reels Cutter</h1>
         <p className="text-white/40 text-[7px] tracking-[0.3em] uppercase font-light">Pro High-Performance Engine</p>
       </div>
 
-      <div className="w-full max-w-[550px] flex flex-col items-center gap-4">
+      {/* Center Block - 'my-auto' forces it to the vertical center, pushing header up and footer down */}
+      <div className="w-full max-w-[550px] flex flex-col items-center gap-4 my-auto py-8">
         
         {/* Unified Pro Recommendations */}
         <div className="flex flex-col items-center text-center space-y-1 mb-2 opacity-80">
@@ -126,15 +127,16 @@ export default function ReelsCutterPage() {
               </div>
             )}
 
+            {/* Render Button - Forced Inline Styles to Guarantee Black Text */}
             <button 
               onClick={processVideo}
               disabled={!loaded || processing || !videoFile}
               className={`w-full mt-10 py-5 rounded-[22px] uppercase tracking-[0.3em] text-[10px] font-black transition-all
                 ${!videoFile ? 'bg-white/5 text-white/20 border border-white/5' : 
                   processing ? 'bg-white/10 text-white animate-pulse' : 
-                  'bg-[#D4AF37] !text-black shadow-[0_10px_40px_rgba(212,175,55,0.25)] hover:scale-[1.02] active:scale-[0.98]'}
+                  'shadow-[0_10px_40px_rgba(212,175,55,0.25)] hover:scale-[1.02] active:scale-[0.98]'}
               `}
-              style={{ color: videoFile && !processing ? '#000000' : undefined }}
+              style={videoFile && !processing ? { backgroundColor: '#D4AF37', color: '#000000' } : {}}
             >
               {processing ? "Rendering..." : "Generate Pro Reel"}
             </button>
@@ -142,8 +144,8 @@ export default function ReelsCutterPage() {
         </div>
       </div>
 
-      {/* Footer Branding */}
-      <div className="flex flex-col items-center gap-4 mt-2">
+      {/* Footer Branding - Pushed to absolute bottom */}
+      <div className="w-full mb-4 md:mb-8 flex flex-col items-center gap-4">
         <p className="footer-text text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
           Powered By deVee Boutique Label
         </p>
