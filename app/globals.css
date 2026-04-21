@@ -25,11 +25,12 @@ body {
   border-color: rgba(212, 175, 55, 0.25) !important;
 }
 
-/* עיצוב פונט הפוטר כמו ב-BPM Calculator */
+/* עיצוב פונט הפוטר - מהודק ויוקרתי */
 .footer-text {
   text-transform: none !important;
   font-variant: normal !important;
-  opacity: 0.6;
+  letter-spacing: 0.15em !important; /* הצמדה של האותיות */
+  opacity: 0.5;
 }
 
 /* צבע הזהב לכפתור והפרוגרס */

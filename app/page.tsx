@@ -136,13 +136,13 @@ export default function ReelsCutterPage() {
         </div>
       </div>
 
-      {/* Footer Branding Section */}
-      <div className="flex flex-col items-center gap-4 mt-2">
-        <p className="footer-text text-[7px] tracking-[0.4em] font-light text-white/50">
-          Powered By deVee Boutique Label
-        </p>
-        <Image src="/label_logo.jpg" alt="deVee Label" width={32} height={32} className="rounded-full opacity-100 shadow-xl" />
-      </div>
+     {/* Footer Branding Section */}
+<div className="flex flex-col items-center gap-4 mt-2">
+  <p className="footer-text text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
+    Powered By deVee Boutique Label
+  </p>
+  <Image src="/label_logo.jpg" alt="deVee Label" width={32} height={32} className="rounded-full opacity-100 shadow-xl" />
+</div>
 
     </main>
   );
