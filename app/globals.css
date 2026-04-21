@@ -1,45 +1,56 @@
 @import "tailwindcss";
 
 :root {
-  /* שחור מוחלט - OLED */
   --background: #050505;
   --foreground: #ffffff;
   --devee-gold: #D4AF37;
+  --devee-gold-glow: rgba(212, 175, 55, 0.3);
 }
 
-/* ביטול הגדרות הדיפולט של הדפדפן */
 body {
   background: var(--background) !important;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
 }
 
-/* 1. ה-Glow הזהוב מסביב לכרטיס */
+/* 1. הילה זהובה קבועה מסביב לכרטיס המרכזי */
 .group {
-  position: relative;
-  transition: all 0.7s ease-in-out;
+  box-shadow: 0 0 40px rgba(212, 175, 55, 0.05);
+  transition: all 0.8s ease-in-out;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
 
+/* ה-Glow הזהוב שביקשת כשמתקרבים עם העכבר */
 .group:hover {
-  /* הילה זהובה עדינה שמתפשטת */
-  box-shadow: 0 0 60px rgba(212, 175, 55, 0.08);
-  border-color: rgba(212, 175, 55, 0.2) !important;
+  box-shadow: 0 0 80px rgba(212, 175, 55, 0.15) !important;
+  border-color: rgba(212, 175, 55, 0.3) !important;
 }
 
-/* 2. תיקון הפוטר - גם אותיות גדולות וגם קטנות */
+/* 2. כפתור ה-Generate והאלמנטים המרכזיים בזהב */
+button, .bg-\[\#D4AF37\] {
+  background-color: var(--devee-gold) !important;
+  color: #000000 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3) !important;
+}
+
+/* 3. ה-Progress Bar גם בזהב */
+.bg-\[\#D4AF37\].h-full {
+  background-color: var(--devee-gold) !important;
+  box-shadow: 0 0 15px var(--devee-gold) !important;
+}
+
+/* 4. תיקון הפונט בפוטר (גם וגם) */
 footer, .footer-text {
   text-transform: none !important;
   font-variant: normal !important;
+  letter-spacing: 0.2em;
 }
 
-/* הילה נוספת מאחורי הכרטיס (אפקט עומק) */
-.blur-glow {
-  position: absolute;
-  background: var(--devee-gold);
-  filter: blur(80px);
-  opacity: 0.03;
-  pointer-events: none;
+/* הילה פנימית לאזור ההעלאה */
+.group\/upload:hover {
+  background-color: rgba(212, 175, 55, 0.03) !important;
+  border-color: rgba(212, 175, 55, 0.2) !important;
 }
