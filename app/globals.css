@@ -33,8 +33,9 @@ body {
   opacity: 0.5;
 }
 
-/* צבע הזהב לכפתור והפרוגרס */
+/* צבע הזהב לכפתור והפרוגרס - תיקון טקסט שחור */
 button, .bg-\[\#D4AF37\] {
   background-color: var(--devee-gold) !important;
+  color: #000000 !important; /* זה מה שהיה חסר! */
   box-shadow: 0 10px 30px rgba(212, 175, 55, 0.2) !important;
 }
