@@ -72,12 +72,14 @@ export default function ReelsCutterPage() {
   return (
     <main className="min-h-[100dvh] bg-[#050505] text-white flex flex-col items-center justify-between p-6 font-sans overflow-hidden">
       
+      {/* Header */}
       <div className="w-full mt-4 md:mt-8 flex flex-col items-center z-10 text-center space-y-2">
         <Image src="/logo.png" alt="Logo" width={110} height={35} className="mb-2 opacity-90" />
         <h1 className="text-[12px] tracking-[0.7em] font-bold uppercase italic text-white">Reels Cutter</h1>
         <p className="text-white/40 text-[7px] tracking-[0.3em] uppercase font-light">Pro High-Performance Engine</p>
       </div>
 
+      {/* Main Content */}
       <div className="w-full max-w-[550px] flex flex-col items-center gap-4 my-auto py-8">
         
         <div className="flex flex-col items-center text-center space-y-1 mb-2 opacity-80">
@@ -126,20 +128,23 @@ export default function ReelsCutterPage() {
             <button 
               onClick={processVideo}
               disabled={!loaded || processing || !videoFile}
-              className={`w-full mt-10 py-5 rounded-[22px] uppercase tracking-[0.3em] text-[10px] font-black transition-all flex items-center justify-center
+              className={`w-full mt-10 py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black transition-all flex items-center justify-center
                 ${!videoFile ? 'bg-white/5 text-white/20 border border-white/5' : 
                   processing ? 'bg-white/10 text-white animate-pulse' : 
-                  'bg-[#D4AF37] shadow-[0_10px_40px_rgba(212,175,55,0.25)] hover:scale-[1.02] active:scale-[0.98]'}
+                  'bg-[#D4AF37] shadow-[0_15px_45px_rgba(212,175,55,0.3)] hover:scale-[1.02] active:scale-[0.98]'}
               `}
+              style={{ 
+                color: videoFile && !processing ? '#ffffff' : undefined,
+                textShadow: videoFile && !processing ? '0px 1px 2px rgba(0,0,0,0.5)' : 'none'
+              }}
             >
-              <span style={{ color: videoFile && !processing ? '#000000' : '' }}>
-                {processing ? "Rendering..." : "Generate Pro Reel"}
-              </span>
+               {processing ? "Rendering..." : "Generate Pro Reel"}
             </button>
           </div>
         </div>
       </div>
 
+      {/* Footer */}
       <div className="w-full mb-4 md:mb-8 flex flex-col items-center gap-4">
         <p className="footer-text text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
           Powered By deVee Boutique Label
