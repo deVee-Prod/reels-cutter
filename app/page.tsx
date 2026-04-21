@@ -27,9 +27,10 @@ export default function ReelsCutterPage() {
       setProgress(Math.round(progress * 100));
     });
 
+    // התיקון כאן: שימוש בנקודותיים (:) במקום שווה (=)
     await ffmpeg.load({
-      coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
     });
     setLoaded(true);
   };
@@ -131,14 +132,13 @@ export default function ReelsCutterPage() {
       </div>
 
       {/* Main Card */}
-      <div className="w-full max-w-[550px] bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-10 relative group-hover:shadow-[0_0_80px_rgba(212,175,55,0.08)] transition-shadow duration-700">
+      <div className="w-full max-w-[550px] bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-10 relative group shadow-[0_0_50px_rgba(0,0,0,0.5)]">
         
-        {/* The Golden Glow - appears on hover */}
-        <div className="absolute -inset-2 bg-[#D4AF37] rounded-[50px] blur-[80px] opacity-[0.01] group-hover:opacity-[0.06] transition-opacity duration-700"></div>
+        {/* Golden Glow - Based on UI requests */}
+        <div className="absolute -inset-2 bg-[#D4AF37] rounded-[50px] blur-[80px] opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700"></div>
         
         <div className="relative flex flex-col items-center">
           
-          {/* Custom Upload Area */}
           <label className="w-full cursor-pointer group/upload">
             <div className="border-2 border-dashed border-white/10 group-hover/upload:border-white/30 rounded-[30px] py-16 bg-white/[0.01] hover:bg-white/[0.03] flex flex-col items-center justify-center transition-all duration-500 shadow-inner">
               <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4 group-hover/upload:scale-110 transition-transform shadow-lg border border-white/5">
@@ -153,7 +153,6 @@ export default function ReelsCutterPage() {
             <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
           </label>
 
-          {/* Progress Section */}
           {processing && (
             <div className="w-full mt-8 px-2">
               <div className="flex justify-between text-[7px] uppercase tracking-[0.1em] text-white/60 mb-2">
@@ -169,14 +168,13 @@ export default function ReelsCutterPage() {
             </div>
           )}
 
-          {/* Action Button */}
           <button 
             onClick={processVideo}
             disabled={!loaded || processing || !videoFile}
             className={`w-full mt-10 py-5 rounded-[22px] uppercase tracking-[0.3em] text-[10px] font-black transition-all
               ${!videoFile ? 'bg-white/5 text-white/20 border border-white/5' : 
                 processing ? 'bg-white/10 text-white animate-pulse' : 
-                'bg-[#D4AF37] text-black shadow-[0_10px_40px_rgba(212,175,55,0.2)] hover:scale-[1.01] active:scale-[0.99]'}
+                'bg-[#D4AF37] text-black shadow-[0_10px_40px_rgba(212,175,55,0.25)] hover:scale-[1.02] active:scale-[0.98]'}
             `}
           >
             {processing ? "Rendering..." : "Generate Pro Reel"}
@@ -185,12 +183,11 @@ export default function ReelsCutterPage() {
       </div>
 
       {/* Footer */}
-      <div className="flex flex-col items-center gap-2 mt-4 space-y-2">
-        <footer className="text-[8px] tracking-[0.3em] font-light text-white/70 uppercase mb-2">
+      <div className="flex flex-col items-center gap-2 mt-4">
+        <footer className="text-[8px] tracking-[0.3em] font-light text-white/70 uppercase">
           Powered By deVee Boutique Label
         </footer>
-        {/* Smaller, original colored logo */}
-        <Image src="/label_logo.jpg" alt="deVee Logo" width={25} height={25} className="rounded-full opacity-100 hover:scale-110 transition-transform duration-500" />
+        <Image src="/label_logo.jpg" alt="deVee Logo" width={25} height={25} className="rounded-full opacity-100" />
       </div>
 
     </main>
