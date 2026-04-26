@@ -149,7 +149,7 @@ export default function ReelsCutterPage() {
         <p className="footer-text text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
           Powered By deVee Boutique Label
         </p>
-        <Image src="/label_logo.jpg" alt="deVee Label" width={32} height={32} className="rounded-full opacity-100 shadow-xl" />
+        <Image src="/label_logo.jpg" alt="deVee Label" width={48} height={48} className="rounded-full opacity-100 shadow-xl" />
       </div>
 
     </main>
