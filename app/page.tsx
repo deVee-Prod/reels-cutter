@@ -3,6 +3,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 
+function LabelFooter() {
+  return (
+    <div className="w-full mb-4 md:mb-8 flex flex-col items-center gap-4">
+      <p className="text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
+        Powered By deVee Boutique Label
+      </p>
+      <Image src="/label_logo.jpg" alt="deVee Label" width={48} height={48} className="rounded-full opacity-100 shadow-xl" />
+    </div>
+  );
+}
+
 export default function ReelsCutterPage() {
   const [authorized, setAuthorized] = useState(false);
   const [password, setPassword] = useState('');
@@ -29,6 +40,7 @@ export default function ReelsCutterPage() {
   const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
   const durationRef = useRef<number>(0);
   const programmaticSeekRef = useRef(false);
+  const programmaticPauseRef = useRef(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const seekDraggingRef = useRef(false);
 
@@ -73,6 +85,7 @@ export default function ReelsCutterPage() {
         const next = segs.filter(s => s.start > t).sort((a, b) => a.start - b.start)[0];
         if (next) {
           programmaticSeekRef.current = true;
+          programmaticPauseRef.current = true;
           v.pause();
           v.muted = true;
           v.currentTime = next.start;
@@ -85,6 +98,7 @@ export default function ReelsCutterPage() {
         const nextSeg = segs[idx + 1];
         if (nextSeg) {
           programmaticSeekRef.current = true;
+          programmaticPauseRef.current = true;
           v.pause();
           v.muted = true;
           v.currentTime = nextSeg.start;
@@ -206,15 +220,6 @@ export default function ReelsCutterPage() {
     } catch (e) { setStatus("Error"); } finally { setProcessing(false); }
   };
 
-  const LabelFooter = () => (
-    <div className="w-full mb-4 md:mb-8 flex flex-col items-center gap-4">
-      <p className="text-[7px] tracking-[0.15em] font-light text-white/50 uppercase">
-        Powered By deVee Boutique Label
-      </p>
-      <Image src="/label_logo.jpg" alt="deVee Label" width={48} height={48} className="rounded-full opacity-100 shadow-xl" />
-    </div>
-  );
-
   if (!authorized) {
     return (
       <main className="min-h-[100dvh] bg-[#050505] flex flex-col items-center justify-between p-8 text-center">
@@ -258,7 +263,7 @@ export default function ReelsCutterPage() {
                       if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; }
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
-                    onPause={() => { setPaused(true); stopLoop(); }}
+                    onPause={() => { stopLoop(); if (!programmaticPauseRef.current) setPaused(true); programmaticPauseRef.current = false; }}
                     className="w-full h-full object-cover"
                     playsInline
                     onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
