@@ -77,8 +77,29 @@ export default function ReelsCutterPage() {
 
   // ─── Whisper → get segments ──────────────────────────────
   const getSegmentsFromWhisper = async (): Promise<{ start: number; end: number | null }[]> => {
+    const ffmpeg = ffmpegRef.current;
+    const { fetchFile } = await import('@ffmpeg/util');
+
+    // חילוץ אודיו קטן בצד הלקוח — פותר את מגבלת 4.5MB של Vercel
+    setStatus("Extracting audio...");
+    const ext = videoFile!.name.split('.').pop()?.toLowerCase() ?? 'mov';
+    const inputName = `input_audio.${ext}`;
+    await ffmpeg.writeFile(inputName, await fetchFile(videoFile!));
+    await ffmpeg.exec([
+      '-i', inputName,
+      '-vn',
+      '-ar', '16000',
+      '-ac', '1',
+      '-b:a', '32k',
+      'whisper_audio.mp3'
+    ]);
+    const audioData = await ffmpeg.readFile('whisper_audio.mp3');
+    const audioBlob = new Blob([(audioData as any).buffer], { type: 'audio/mpeg' });
+
+    // שליחת mp3 בלבד
+    setStatus("Analysing with Whisper...");
     const form = new FormData();
-    form.append('video', videoFile!);
+    form.append('video', audioBlob, 'audio.mp3');
     const res = await fetch('/api/whisper', { method: 'POST', body: form });
     if (!res.ok) {
       const err = await res.json();
