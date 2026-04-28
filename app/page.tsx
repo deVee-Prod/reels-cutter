@@ -42,7 +42,6 @@ export default function ReelsCutterPage() {
   const programmaticSeekRef = useRef(false);
   const programmaticPauseRef = useRef(false);
   const warmingUpRef = useRef(false);
-  const isMobileRef = useRef(false);
   const prefetchVideoRef = useRef<HTMLVideoElement>(null);
   const prefetchWarmedRef = useRef(false);
   const lastSegIdxRef = useRef(-1);
@@ -56,7 +55,6 @@ export default function ReelsCutterPage() {
     }
   }, []);
 
-  useEffect(() => { isMobileRef.current = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); }, []);
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   useEffect(() => { durationRef.current = duration; }, [duration]);
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
@@ -91,19 +89,9 @@ export default function ReelsCutterPage() {
       const jumpTo = (target: number) => {
         programmaticSeekRef.current = true;
         v.muted = true;
-        if (isMobileRef.current) {
-          // Mobile: hide video during seek — clean black cut, no play() issues
-          v.style.opacity = '0';
-          v.currentTime = target;
-          const restore = () => { if (videoRef.current) { videoRef.current.style.opacity = '1'; videoRef.current.muted = false; startLoop(); } };
-          const fallback = setTimeout(restore, 800);
-          v.addEventListener('seeked', () => { clearTimeout(fallback); restore(); }, { once: true });
-        } else {
-          // Desktop: seamless seek while playing
-          v.currentTime = target;
-          const fallback = setTimeout(() => { if (videoRef.current) { videoRef.current.muted = false; startLoop(); } }, 800);
-          v.addEventListener('seeked', () => { clearTimeout(fallback); if (videoRef.current) { videoRef.current.muted = false; startLoop(); } }, { once: true });
-        }
+        v.currentTime = target;
+        const fallback = setTimeout(() => { if (videoRef.current) { videoRef.current.muted = false; startLoop(); } }, 800);
+        v.addEventListener('seeked', () => { clearTimeout(fallback); if (videoRef.current) { videoRef.current.muted = false; startLoop(); } }, { once: true });
       };
 
       if (!inSeg) {
