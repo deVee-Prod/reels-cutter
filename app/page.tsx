@@ -42,6 +42,9 @@ export default function ReelsCutterPage() {
   const programmaticSeekRef = useRef(false);
   const programmaticPauseRef = useRef(false);
   const warmingUpRef = useRef(false);
+  const prefetchVideoRef = useRef<HTMLVideoElement>(null);
+  const prefetchWarmedRef = useRef(false);
+  const lastSegIdxRef = useRef(-1);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const seekDraggingRef = useRef(false);
 
@@ -96,6 +99,21 @@ export default function ReelsCutterPage() {
         if (next) jumpTo(next.start); else v.pause();
         rafRef.current = null; return;
       }
+
+      // JIT prefetch — 1.5s before jump, silently warm up next segment in hidden video
+      const idx = segs.indexOf(inSeg);
+      if (idx !== lastSegIdxRef.current) { lastSegIdxRef.current = idx; prefetchWarmedRef.current = false; }
+      if (inSeg.end !== null && t >= inSeg.end - 1.5 && !prefetchWarmedRef.current) {
+        const nextSeg = segs[idx + 1];
+        const pv = prefetchVideoRef.current;
+        if (nextSeg && pv) {
+          prefetchWarmedRef.current = true;
+          pv.currentTime = nextSeg.start;
+          pv.play().catch(() => {});
+          setTimeout(() => { if (prefetchVideoRef.current) prefetchVideoRef.current.pause(); }, 500);
+        }
+      }
+
       if (inSeg.end !== null && t >= inSeg.end - 0.2) {
         const idx = segs.indexOf(inSeg);
         const nextSeg = segs[idx + 1];
@@ -184,7 +202,7 @@ export default function ReelsCutterPage() {
       await seekTo(seg.start);
       // Play briefly so iOS warms up the sequential decode pipeline, not just seek cache
       await video.play().catch(() => {});
-      await new Promise<void>(r => setTimeout(r, 350));
+      await new Promise<void>(r => setTimeout(r, 700));
       video.pause();
     }
 
@@ -304,6 +322,8 @@ export default function ReelsCutterPage() {
                     playsInline
                     onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
                   />
+                  {/* Hidden prefetch video — pre-warms iOS decode cache for next segment */}
+                  <video ref={prefetchVideoRef} src={videoUrl ?? undefined} muted playsInline className="absolute w-0 h-0 opacity-0 pointer-events-none" />
                   {processing && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center gap-3">
                       <span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span>
