@@ -17,7 +17,8 @@ export default function ReelsCutterPage() {
   const [segments, setSegments] = useState<{ start: number; end: number | null }[] | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [zoom, setZoom] = useState(1);
+  const [paused, setPaused] = useState(true);
+  const [zoom, setZoom] = useState(4);
 
   const ffmpegRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -77,7 +78,7 @@ export default function ReelsCutterPage() {
         } else { v.pause(); }
         rafRef.current = null; return;
       }
-      if (inSeg.end !== null && t >= inSeg.end - 0.05) {
+      if (inSeg.end !== null && t >= inSeg.end - 0.12) {
         const idx = segs.indexOf(inSeg);
         const nextSeg = segs[idx + 1];
         if (nextSeg) {
@@ -249,12 +250,12 @@ export default function ReelsCutterPage() {
                     src={videoUrl}
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onTimeUpdate={handleTimeUpdate}
-                    onPlay={() => startLoop()}
+                    onPlay={() => { setPaused(false); startLoop(); }}
                     onSeeked={(e) => {
                       if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; }
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
-                    onPause={stopLoop}
+                    onPause={() => { setPaused(true); stopLoop(); }}
                     className="w-full h-full object-cover"
                     playsInline
                     onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
@@ -319,7 +320,7 @@ export default function ReelsCutterPage() {
                         {segments.map((seg, i) => (
                           <div
                             key={i}
-                            className="absolute top-2 bottom-2 cursor-ew-resize"
+                            className="absolute top-0 bottom-0 cursor-ew-resize"
                             style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
                             onPointerDown={(e) => {
                               e.stopPropagation();
@@ -347,11 +348,11 @@ export default function ReelsCutterPage() {
                             }}
                           >
                             {/* Left solid handle */}
-                            <div className="absolute left-0 top-0 h-full w-4 bg-[#D4AF37] rounded-l-md pointer-events-none" />
+                            <div className="absolute left-0 top-0 h-full w-2 bg-[#D4AF37] rounded-l-sm pointer-events-none" />
                             {/* Center body */}
-                            <div className="absolute left-4 right-4 top-0 bottom-0 bg-[#D4AF37]/30 pointer-events-none" />
+                            <div className="absolute left-2 right-2 top-0 bottom-0 bg-[#D4AF37]/30 pointer-events-none" />
                             {/* Right solid handle */}
-                            <div className="absolute right-0 top-0 h-full w-4 bg-[#D4AF37] rounded-r-md pointer-events-none" />
+                            <div className="absolute right-0 top-0 h-full w-2 bg-[#D4AF37] rounded-r-sm pointer-events-none" />
                           </div>
                         ))}
 
@@ -379,10 +380,12 @@ export default function ReelsCutterPage() {
                       />
                     </div>
 
-                    {/* ── Play / Pause ── */}
-                    <div className="flex justify-center gap-3">
-                      <button onClick={() => videoRef.current?.play()} className="px-4 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">Play</button>
-                      <button onClick={() => videoRef.current?.pause()} className="px-4 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">Pause</button>
+                    {/* ── Play / Pause toggle ── */}
+                    <div className="flex justify-center">
+                      <button
+                        onClick={() => paused ? videoRef.current?.play() : videoRef.current?.pause()}
+                        className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors"
+                      >{paused ? 'Play' : 'Pause'}</button>
                     </div>
 
                   </div>
