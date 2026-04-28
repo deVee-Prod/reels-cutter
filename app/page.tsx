@@ -348,6 +348,13 @@ export default function ReelsCutterPage() {
                 </div>
 
                 {segments && (
+                  <div className="flex flex-col items-center gap-1 mb-2">
+                    <p className="text-white/40 text-[8px] tracking-[0.12em] font-light">Don&apos;t worry about the quality — it&apos;s just a preview</p>
+                    <p dir="rtl" className="text-white/40 text-[8px] tracking-[0.05em] font-light">לא לדאוג מהאיכות זה רק תצוגה מקדימה</p>
+                  </div>
+                )}
+
+                {segments && (
                   <div className="w-full mb-6 space-y-2">
 
                     {/* ── Zoom controls ── */}
