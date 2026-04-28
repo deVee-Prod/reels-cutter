@@ -41,6 +41,7 @@ export default function ReelsCutterPage() {
   const durationRef = useRef<number>(0);
   const programmaticSeekRef = useRef(false);
   const programmaticPauseRef = useRef(false);
+  const warmingUpRef = useRef(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const seekDraggingRef = useRef(false);
 
@@ -78,7 +79,7 @@ export default function ReelsCutterPage() {
       const v = videoRef.current;
       const segs = segmentsRef.current;
       const dur = durationRef.current;
-      if (!v || !segs || v.paused || draggingRef.current || seekDraggingRef.current) { rafRef.current = null; return; }
+      if (!v || !segs || v.paused || draggingRef.current || seekDraggingRef.current || warmingUpRef.current) { rafRef.current = null; return; }
       const t = v.currentTime;
       const inSeg = segs.find(s => t >= s.start && t <= (s.end ?? dur));
 
@@ -159,14 +160,7 @@ export default function ReelsCutterPage() {
     const video = videoRef.current;
     if (!video || segs.length === 0) return;
 
-    const globalDeadline = Date.now() + 20000;
-
-    const seekTo = (t: number) => new Promise<void>(resolve => {
-      if (Date.now() >= globalDeadline) { resolve(); return; }
-      const fallback = setTimeout(resolve, 500);
-      video.addEventListener('seeked', () => { clearTimeout(fallback); resolve(); }, { once: true });
-      video.currentTime = t;
-    });
+    const globalDeadline = Date.now() + 25000;
 
     if (video.readyState < 2) {
       await new Promise<void>(resolve => {
@@ -175,15 +169,27 @@ export default function ReelsCutterPage() {
       });
     }
 
+    warmingUpRef.current = true;
+    video.muted = true;
+
+    const seekTo = (t: number) => new Promise<void>(resolve => {
+      if (Date.now() >= globalDeadline) { resolve(); return; }
+      const fallback = setTimeout(resolve, 500);
+      video.addEventListener('seeked', () => { clearTimeout(fallback); resolve(); }, { once: true });
+      video.currentTime = t;
+    });
+
     for (const seg of segs) {
       if (Date.now() >= globalDeadline) break;
-      const end = seg.end ?? durationRef.current;
-      const len = end - seg.start;
       await seekTo(seg.start);
-      if (len > 0.2) await seekTo(seg.start + 0.1);
-      if (len > 0.4) await seekTo(seg.start + 0.3);
+      // Play briefly so iOS warms up the sequential decode pipeline, not just seek cache
+      await video.play().catch(() => {});
+      await new Promise<void>(r => setTimeout(r, 350));
+      video.pause();
     }
 
+    video.muted = false;
+    warmingUpRef.current = false;
     video.currentTime = segs[0].start;
   };
 
@@ -288,12 +294,12 @@ export default function ReelsCutterPage() {
                     src={videoUrl}
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onTimeUpdate={handleTimeUpdate}
-                    onPlay={() => { setPaused(false); startLoop(); }}
+                    onPlay={() => { if (!warmingUpRef.current) setPaused(false); startLoop(); }}
                     onSeeked={(e) => {
                       if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; }
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
-                    onPause={() => { stopLoop(); setPaused(true); }}
+                    onPause={() => { stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
                     className="w-full h-full object-cover"
                     playsInline
                     onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()}
