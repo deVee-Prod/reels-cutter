@@ -288,8 +288,7 @@ export default function ReelsCutterPage() {
               <span className="text-[#D4AF37] text-[9px] tracking-[0.35em] uppercase font-semibold">1080p Vertical Video</span>
               <div className="h-px w-8 bg-[#D4AF37]/30" />
             </div>
-            <p className="text-white/55 text-[11px] tracking-[0.05em] font-light">מיוחד לסרטוני וידאו אנכי 1080p</p>
-            <p className="text-white/25 text-[8px] tracking-[0.2em] uppercase">Auto Silence Removal · Smart Cut Engine</p>
+            <p dir="rtl" className="text-white text-[11px] tracking-[0.05em] font-light">מיוחד לסרטוני וידאו אנכי <span dir="ltr">1080p</span></p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4 bg-[#0c0c0c]/40 p-8 rounded-[24px] border border-white/5 backdrop-blur-xl w-full">
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none" placeholder="ACCESS KEY" />
