@@ -22,6 +22,11 @@ export default function ReelsCutterPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ index: number; edge: 'start' | 'end' } | null>(null);
+  const segmentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
+  const durationRef = useRef<number>(0);
+  const programmaticSeekRef = useRef(false);
+  const scheduleJumpRef = useRef<(time: number) => void>(() => {});
 
   useEffect(() => {
     if (document.cookie.includes('session_access=granted')) {
@@ -30,8 +35,59 @@ export default function ReelsCutterPage() {
     }
   }, []);
 
+  useEffect(() => { segmentsRef.current = segments; }, [segments]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => () => { if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current); }, []);
+
+  const clearSegmentTimer = () => {
+    if (segmentTimerRef.current !== null) {
+      clearTimeout(segmentTimerRef.current);
+      segmentTimerRef.current = null;
+    }
+  };
+
+  const scheduleJumpFromTime = (time: number) => {
+    clearSegmentTimer();
+    const segs = segmentsRef.current;
+    const dur = durationRef.current;
+    const video = videoRef.current;
+    if (!segs || !video) return;
+
+    const inSeg = segs.find(s => time >= s.start && time <= (s.end ?? dur));
+    if (!inSeg) {
+      const next = segs.filter(s => s.start > time).sort((a, b) => a.start - b.start)[0];
+      if (next) {
+        programmaticSeekRef.current = true;
+        video.currentTime = next.start;
+        scheduleJumpRef.current(next.start);
+      } else {
+        video.pause();
+      }
+      return;
+    }
+    if (inSeg.end === null) return;
+    const msUntilEnd = (inSeg.end - time) * 1000;
+    const idx = segs.indexOf(inSeg);
+    const nextSeg = segs[idx + 1];
+    segmentTimerRef.current = setTimeout(() => {
+      const v = videoRef.current;
+      if (!v || v.paused) return;
+      programmaticSeekRef.current = true;
+      if (nextSeg) {
+        v.currentTime = nextSeg.start;
+        scheduleJumpRef.current(nextSeg.start);
+      } else {
+        v.pause();
+      }
+    }, Math.max(0, msUntilEnd - 60));
+  };
+  scheduleJumpRef.current = scheduleJumpFromTime;
+
   useEffect(() => {
-    const handleMouseUp = () => { draggingRef.current = null; };
+    const handleMouseUp = () => {
+      draggingRef.current = null;
+      if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime);
+    };
     const handleMouseMove = (e: MouseEvent) => {
       if (!draggingRef.current || !duration || !timelineRef.current) return;
       const rect = timelineRef.current.getBoundingClientRect();
@@ -60,24 +116,7 @@ export default function ReelsCutterPage() {
   }, [duration]);
 
   const handleTimeUpdate = () => {
-    if (!videoRef.current || !segments || processing) return;
-    const video = videoRef.current;
-    const time = video.currentTime;
-    setCurrentTime(time);
-    
-    if (!video.paused) {
-      const currentSeg = segments.find(seg => time >= seg.start && time <= (seg.end ?? duration));
-      if (!currentSeg) {
-        const nextSeg = segments.filter(seg => seg.start > time).sort((a, b) => a.start - b.start)[0];
-        if (nextSeg) video.currentTime = nextSeg.start;
-        else video.pause();
-      } else if (currentSeg.end !== null && time >= currentSeg.end - 0.04) {
-        const currentIndex = segments.indexOf(currentSeg);
-        const nextSeg = segments[currentIndex + 1];
-        if (nextSeg) video.currentTime = nextSeg.start;
-        else video.pause();
-      }
-    }
+    if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
   };
 
   const loadFFmpeg = async () => {
@@ -217,7 +256,7 @@ export default function ReelsCutterPage() {
             {videoUrl ? (
               <div className="w-full flex flex-col items-center">
                 <div className="relative aspect-[9/16] w-[240px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-6 shadow-inner">
-                  <video ref={videoRef} src={videoUrl} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onTimeUpdate={handleTimeUpdate} className="w-full h-full object-cover" playsInline onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()} />
+                  <video ref={videoRef} src={videoUrl} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onTimeUpdate={handleTimeUpdate} onPlay={(e) => scheduleJumpFromTime(e.currentTarget.currentTime)} onSeeked={(e) => { if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; } if (!e.currentTarget.paused && !draggingRef.current) scheduleJumpFromTime(e.currentTarget.currentTime); }} onPause={clearSegmentTimer} className="w-full h-full object-cover" playsInline onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()} />
                   {processing && <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 text-center"><span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span></div>}
                 </div>
                 
