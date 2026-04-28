@@ -86,14 +86,14 @@ export default function ReelsCutterPage() {
   scheduleJumpRef.current = scheduleJumpFromTime;
 
   useEffect(() => {
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       if (draggingRef.current) {
         draggingRef.current = null;
         if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime);
       }
     };
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => window.removeEventListener('pointerup', handlePointerUp);
   }, []);
 
   const handleTimeUpdate = () => {
@@ -142,27 +142,18 @@ export default function ReelsCutterPage() {
 
     try {
       setStatus("Extracting audio...");
+      setProgress(0);
       await ffmpeg.writeFile('input.mov', await fetchFile(videoFile));
-      
-      // 1. חילוץ סאונד ל-Whisper
       await ffmpeg.exec(['-i', 'input.mov', '-vn', '-ar', '16000', '-ac', '1', 'whisper.mp3']);
       const audioData = await ffmpeg.readFile('whisper.mp3');
       const audioBlob = new Blob([(audioData as any).buffer], { type: 'audio/mpeg' });
 
-      // 2. יצירת Proxy קליל לתצוגה מקדימה (360p)
-      setStatus("Creating Smooth Preview...");
-      await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32', '-c:a', 'copy', 'preview.mp4']);
-      const previewData = await ffmpeg.readFile('preview.mp4');
-      const previewUrl = URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' }));
-      setVideoUrl(previewUrl);
-
-      // 3. שליחה ל-Whisper
       setStatus("Whisper is analyzing...");
       const form = new FormData();
       form.append('video', audioBlob, 'audio.mp3');
       const res = await fetch('/api/whisper', { method: 'POST', body: form });
       const data = await res.json();
-      
+
       if (data.segments) {
         setSegments(data.segments);
         setStatus("Review Edit");
@@ -177,10 +168,10 @@ export default function ReelsCutterPage() {
   const renderVideo = async () => {
     if (!videoFile || !segments) return;
     setProcessing(true);
+    setProgress(0);
     setStatus("Rendering 1080p Master...");
     try {
       const { fetchFile } = await import('@ffmpeg/util');
-      // חשוב: משתמשים ב-videoFile המקורי ולא ב-Proxy
       await ffmpegRef.current.writeFile('input.mov', await fetchFile(videoFile));
       let f = '', c = '';
       segments.forEach((s, i) => {
@@ -189,7 +180,7 @@ export default function ReelsCutterPage() {
         c += `[v${i}][a${i}]`;
       });
       f += `${c}concat=n=${segments.length}:v=1:a=1[vraw][outa];[vraw]fps=30,scale=1080:-2[outv]`;
-      await ffmpegRef.current.exec(['-i', 'input.mov', '-filter_complex', f, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-crf', '24', 'out.mp4']);
+      await ffmpegRef.current.exec(['-i', 'input.mov', '-filter_complex', f, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24', 'out.mp4']);
       const url = URL.createObjectURL(new Blob([(await ffmpegRef.current.readFile('out.mp4') as any).buffer], { type: 'video/mp4' }));
       const a = document.createElement('a'); a.href = url; a.download = `deVee_${videoFile.name}.mp4`; a.click();
     } catch (e) { setStatus("Error"); } finally { setProcessing(false); }
@@ -238,7 +229,19 @@ export default function ReelsCutterPage() {
               <div className="w-full flex flex-col items-center">
                 <div className="relative aspect-[9/16] w-[240px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-6 shadow-inner">
                   <video ref={videoRef} src={videoUrl} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onTimeUpdate={handleTimeUpdate} onPlay={(e) => scheduleJumpFromTime(e.currentTarget.currentTime)} onSeeked={(e) => { if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; } if (!e.currentTarget.paused && !draggingRef.current) scheduleJumpFromTime(e.currentTarget.currentTime); }} onPause={clearSegmentTimer} className="w-full h-full object-cover" playsInline onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()} />
-                  {processing && <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 text-center"><span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span></div>}
+                  {processing && (
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center gap-3">
+                      <span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span>
+                      {progress > 0 && (
+                        <div className="w-[140px] flex flex-col items-center gap-1">
+                          <div className="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full bg-[#D4AF37] rounded-full transition-all duration-200" style={{ width: `${progress}%` }} />
+                          </div>
+                          <span className="text-white/40 text-[8px] tracking-widest">{progress}%</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 
                 {segments && (
@@ -257,7 +260,7 @@ export default function ReelsCutterPage() {
                     </div>
 
                     {/* ── Segments timeline – drag handles only ── */}
-                    <div ref={timelineRef} className="relative h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
+                    <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
                       {segments.map((seg, i) => (
                         <div
                           key={i}
