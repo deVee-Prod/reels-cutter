@@ -150,10 +150,18 @@ export default function ReelsCutterPage() {
       const audioData = await ffmpeg.readFile('whisper.mp3');
       const audioBlob = new Blob([(audioData as any).buffer], { type: 'audio/mpeg' });
 
-      setStatus("Whisper is analyzing...");
+      // שליחת Whisper מיד (async) — בזמן שFFmpeg עושה 360p
       const form = new FormData();
       form.append('video', audioBlob, 'audio.mp3');
-      const res = await fetch('/api/whisper', { method: 'POST', body: form });
+      const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
+
+      setStatus("Creating preview...");
+      await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32', '-c:a', 'copy', 'preview.mp4']);
+      const previewData = await ffmpeg.readFile('preview.mp4');
+      setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
+
+      setStatus("Whisper is analyzing...");
+      const res = await whisperPromise;
       const data = await res.json();
 
       if (data.segments) {
@@ -262,7 +270,7 @@ export default function ReelsCutterPage() {
                     </div>
 
                     {/* ── Segments timeline – drag handles only ── */}
-                    <div ref={timelineRef} className="relative h-32 md:h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
+                    <div ref={timelineRef} className="relative h-36 md:h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
                       {segments.map((seg, i) => (
                         <div
                           key={i}
@@ -294,27 +302,43 @@ export default function ReelsCutterPage() {
                             draggingRef.current = null;
                             if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime);
                           }}
-                        />
+                        >
+                          <div className="absolute left-0 top-0 h-full w-5 flex items-center justify-center pointer-events-none">
+                            <div className="flex flex-col gap-[3px]">
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                            </div>
+                          </div>
+                          <div className="absolute right-0 top-0 h-full w-5 flex items-center justify-center pointer-events-none">
+                            <div className="flex flex-col gap-[3px]">
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                              <div className="w-[2px] h-[5px] rounded-full bg-[#D4AF37]" />
+                            </div>
+                          </div>
+                        </div>
                       ))}
                       <div className="absolute top-0 bottom-0 w-px bg-white/20" style={{ left: `${(currentTime / duration) * 100}%`, pointerEvents: 'none' }} />
                     </div>
 
                     {/* ── Seek bar – video navigation only ── */}
-                    <div className="w-full pt-1 pb-2">
-                      <div
-                        ref={seekBarRef}
-                        className="relative w-full h-[3px] bg-white/[0.08] rounded-full cursor-pointer"
-                        onClick={(e) => { if (!seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                      >
-                        <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full pointer-events-none" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                        <div
-                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[11px] h-[11px] rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto"
-                          style={{ left: `${(currentTime / duration) * 100}%` }}
-                          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; (e.target as Element).setPointerCapture(e.pointerId); }}
-                          onPointerMove={(e) => { if (!seekDraggingRef.current || !seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                          onPointerUp={(e) => { seekDraggingRef.current = false; (e.target as Element).releasePointerCapture(e.pointerId); if (videoRef.current && !videoRef.current.paused) scheduleJumpFromTime(videoRef.current.currentTime); }}
-                        />
+                    <div
+                      ref={seekBarRef}
+                      className="relative w-full h-10 md:h-6 flex items-center cursor-pointer"
+                      style={{ touchAction: 'none' }}
+                      onClick={(e) => { if (!seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                    >
+                      <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
+                        <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
                       </div>
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto"
+                        style={{ left: `${(currentTime / duration) * 100}%` }}
+                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                        onPointerMove={(e) => { if (!seekDraggingRef.current || !seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                        onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); if (videoRef.current && !videoRef.current.paused) scheduleJumpFromTime(videoRef.current.currentTime); }}
+                      />
                     </div>
 
                     {/* ── Play / Pause ── */}
