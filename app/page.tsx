@@ -342,7 +342,10 @@ export default function ReelsCutterPage() {
                                 if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) };
                                 return { ...s, end: Math.max(t, s.start + 0.1) };
                               }) : prev);
-                              if (videoRef.current) videoRef.current.currentTime = t;
+                              if (videoRef.current) {
+                                const newStart = edge === 'start' ? Math.min(t, (seg.end ?? duration) - 0.1) : seg.start;
+                                videoRef.current.currentTime = newStart;
+                              }
                             }}
                             onPointerUp={(e) => {
                               e.currentTarget.releasePointerCapture(e.pointerId);
