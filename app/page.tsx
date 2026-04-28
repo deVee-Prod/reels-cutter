@@ -261,22 +261,35 @@ export default function ReelsCutterPage() {
                       {segments.map((seg, i) => (
                         <div
                           key={i}
-                          className="absolute h-full bg-[#D4AF37]/50 border-x border-[#D4AF37]"
+                          className="absolute h-full bg-[#D4AF37]/50 border-x border-[#D4AF37] cursor-ew-resize"
                           style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%` }}
-                        >
-                          {/* Right handle first (lower z) */}
-                          <div className="absolute right-0 w-5 h-full cursor-ew-resize z-10"
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); draggingRef.current = { index: i, edge: 'end' }; }}
-                            onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width)); const t = (x / rect.width) * duration; setSegments(prev => prev ? prev.map((s, idx) => idx !== i ? s : { ...s, end: Math.max(t, s.start + 0.1) }) : prev); if (videoRef.current) videoRef.current.currentTime = t; }}
-                            onPointerUp={(e) => { (e.target as Element).releasePointerCapture(e.pointerId); draggingRef.current = null; if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime); }}
-                          />
-                          {/* Left handle second (higher z — wins on overlap) */}
-                          <div className="absolute left-0 w-5 h-full cursor-ew-resize z-20"
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); draggingRef.current = { index: i, edge: 'start' }; }}
-                            onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width)); const t = (x / rect.width) * duration; setSegments(prev => prev ? prev.map((s, idx) => idx !== i ? s : { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }) : prev); if (videoRef.current) videoRef.current.currentTime = t; }}
-                            onPointerUp={(e) => { (e.target as Element).releasePointerCapture(e.pointerId); draggingRef.current = null; if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime); }}
-                          />
-                        </div>
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const edge = (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end';
+                            draggingRef.current = { index: i, edge };
+                          }}
+                          onPointerMove={(e) => {
+                            if (!draggingRef.current || !timelineRef.current) return;
+                            const rect = timelineRef.current.getBoundingClientRect();
+                            const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                            const t = (x / rect.width) * duration;
+                            const { edge } = draggingRef.current;
+                            setSegments(prev => prev ? prev.map((s, idx) => {
+                              if (idx !== i) return s;
+                              if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) };
+                              return { ...s, end: Math.max(t, s.start + 0.1) };
+                            }) : prev);
+                            if (videoRef.current) videoRef.current.currentTime = t;
+                          }}
+                          onPointerUp={(e) => {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                            draggingRef.current = null;
+                            if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime);
+                          }}
+                        />
                       ))}
                       <div className="absolute top-0 bottom-0 w-px bg-white/20" style={{ left: `${(currentTime / duration) * 100}%`, pointerEvents: 'none' }} />
                     </div>
