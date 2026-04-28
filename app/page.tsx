@@ -191,7 +191,7 @@ export default function ReelsCutterPage() {
       const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
 
       setStatus("Creating preview...");
-      await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '35', '-g', '1', '-c:a', 'copy', 'preview.mp4']);
+      await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-profile:v', 'baseline', '-level', '3.1', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
       const previewData = await ffmpeg.readFile('preview.mp4');
       setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
 
