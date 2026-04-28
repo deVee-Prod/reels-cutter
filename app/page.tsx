@@ -28,6 +28,7 @@ export default function ReelsCutterPage() {
   const programmaticSeekRef = useRef(false);
   const scheduleJumpRef = useRef<(time: number) => void>(() => {});
   const seekBarRef = useRef<HTMLDivElement>(null);
+  const seekDraggingRef = useRef(false);
 
   useEffect(() => {
     if (document.cookie.includes('session_access=granted')) {
@@ -256,34 +257,25 @@ export default function ReelsCutterPage() {
                     </div>
 
                     {/* ── Segments timeline – drag handles only ── */}
-                    <div ref={timelineRef} className="relative h-11 bg-white/[0.03] rounded-2xl border border-white/[0.06] overflow-hidden">
+                    <div ref={timelineRef} className="relative h-10 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
                       {segments.map((seg, i) => (
                         <div
                           key={i}
-                          className="absolute top-1.5 bottom-1.5 bg-[#D4AF37]/25 rounded-lg border border-[#D4AF37]/50"
+                          className="absolute h-full bg-[#D4AF37]/50 border-x border-[#D4AF37]"
                           style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%` }}
                         >
-                          {/* Left handle */}
-                          <div
-                            className="absolute left-0 top-0 w-5 h-full cursor-ew-resize z-10 flex items-center justify-center"
+                          <div className="absolute left-0 w-3 h-full cursor-ew-resize z-10"
                             onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); draggingRef.current = { index: i, edge: 'start' }; }}
                             onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width)); const t = (x / rect.width) * duration; setSegments(prev => prev ? prev.map((s, idx) => idx !== i ? s : { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }) : prev); if (videoRef.current) videoRef.current.currentTime = t; }}
                             onPointerUp={(e) => { (e.target as Element).releasePointerCapture(e.pointerId); draggingRef.current = null; if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime); }}
-                          >
-                            <div className="w-px h-4 rounded-full bg-[#D4AF37]/80 pointer-events-none" />
-                          </div>
-                          {/* Right handle */}
-                          <div
-                            className="absolute right-0 top-0 w-5 h-full cursor-ew-resize z-10 flex items-center justify-center"
+                          />
+                          <div className="absolute right-0 w-3 h-full cursor-ew-resize z-10"
                             onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); draggingRef.current = { index: i, edge: 'end' }; }}
                             onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width)); const t = (x / rect.width) * duration; setSegments(prev => prev ? prev.map((s, idx) => idx !== i ? s : { ...s, end: Math.max(t, s.start + 0.1) }) : prev); if (videoRef.current) videoRef.current.currentTime = t; }}
                             onPointerUp={(e) => { (e.target as Element).releasePointerCapture(e.pointerId); draggingRef.current = null; if (videoRef.current && !videoRef.current.paused) scheduleJumpRef.current(videoRef.current.currentTime); }}
-                          >
-                            <div className="w-px h-4 rounded-full bg-[#D4AF37]/80 pointer-events-none" />
-                          </div>
+                          />
                         </div>
                       ))}
-                      {/* Playhead */}
                       <div className="absolute top-0 bottom-0 w-px bg-white/20" style={{ left: `${(currentTime / duration) * 100}%`, pointerEvents: 'none' }} />
                     </div>
 
@@ -298,9 +290,9 @@ export default function ReelsCutterPage() {
                         <div
                           className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[11px] h-[11px] rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto"
                           style={{ left: `${(currentTime / duration) * 100}%` }}
-                          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); }}
-                          onPointerMove={(e) => { if (!seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                          onPointerUp={(e) => { (e.target as Element).releasePointerCapture(e.pointerId); }}
+                          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; (e.target as Element).setPointerCapture(e.pointerId); }}
+                          onPointerMove={(e) => { if (!seekDraggingRef.current || !seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                          onPointerUp={(e) => { seekDraggingRef.current = false; (e.target as Element).releasePointerCapture(e.pointerId); }}
                         />
                       </div>
                     </div>
