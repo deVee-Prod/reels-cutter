@@ -62,17 +62,27 @@ function buildSpeechSegments(
 ): { start: number; end: number | null }[] {
   if (words.length === 0) return [{ start: 0, end: null }];
 
-  const segments: { start: number; end: number | null }[] = [];
-  let segStart = words[0].start;
-  let segEnd = words[0].end;
+  // תיקון: end של מילה לא יכול להיות יותר מ-1 שניה אחרי ה-start שלה
+  const MAX_WORD_DURATION = 1.0;
+  const fixed = words.map((w, i) => {
+    const nextStart = i < words.length - 1 ? words[i + 1].start : null;
+    const maxEnd = nextStart !== null
+      ? Math.min(w.start + MAX_WORD_DURATION, nextStart)
+      : w.start + MAX_WORD_DURATION;
+    return { start: w.start, end: Math.min(w.end, maxEnd) };
+  });
 
-  for (let i = 1; i < words.length; i++) {
-    const gap = words[i].start - segEnd;
+  const segments: { start: number; end: number | null }[] = [];
+  let segStart = fixed[0].start;
+  let segEnd = fixed[0].end;
+
+  for (let i = 1; i < fixed.length; i++) {
+    const gap = fixed[i].start - segEnd;
     if (gap >= threshold) {
       segments.push({ start: segStart, end: segEnd });
-      segStart = words[i].start;
+      segStart = fixed[i].start;
     }
-    segEnd = words[i].end;
+    segEnd = fixed[i].end;
   }
   segments.push({ start: segStart, end: null });
 
