@@ -76,12 +76,14 @@ export default function ReelsCutterPage() {
       if (!v || v.paused) return;
       programmaticSeekRef.current = true;
       if (nextSeg) {
+        v.muted = true;
         v.currentTime = nextSeg.start;
         scheduleJumpRef.current(nextSeg.start);
+        setTimeout(() => { if (videoRef.current) videoRef.current.muted = false; }, 120);
       } else {
         v.pause();
       }
-    }, Math.max(0, msUntilEnd - 60));
+    }, Math.max(0, msUntilEnd - 100));
   };
   scheduleJumpRef.current = scheduleJumpFromTime;
 
@@ -228,7 +230,7 @@ export default function ReelsCutterPage() {
             {videoUrl ? (
               <div className="w-full flex flex-col items-center">
                 <div className="relative aspect-[9/16] w-[240px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-6 shadow-inner">
-                  <video ref={videoRef} src={videoUrl} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onTimeUpdate={handleTimeUpdate} onPlay={(e) => scheduleJumpFromTime(e.currentTarget.currentTime)} onSeeked={(e) => { if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; } if (!e.currentTarget.paused && !draggingRef.current) scheduleJumpFromTime(e.currentTarget.currentTime); }} onPause={clearSegmentTimer} className="w-full h-full object-cover" playsInline onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()} />
+                  <video ref={videoRef} src={videoUrl} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onTimeUpdate={handleTimeUpdate} onPlay={(e) => scheduleJumpFromTime(e.currentTarget.currentTime)} onSeeked={(e) => { if (programmaticSeekRef.current) { programmaticSeekRef.current = false; return; } if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) scheduleJumpFromTime(e.currentTarget.currentTime); }} onPause={clearSegmentTimer} className="w-full h-full object-cover" playsInline onClick={() => videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause()} />
                   {processing && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center gap-3">
                       <span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span>
@@ -260,12 +262,12 @@ export default function ReelsCutterPage() {
                     </div>
 
                     {/* ── Segments timeline – drag handles only ── */}
-                    <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
+                    <div ref={timelineRef} className="relative h-32 md:h-14 bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden">
                       {segments.map((seg, i) => (
                         <div
                           key={i}
                           className="absolute h-full bg-[#D4AF37]/50 border-x border-[#D4AF37] cursor-ew-resize"
-                          style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%` }}
+                          style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
                           onPointerDown={(e) => {
                             e.stopPropagation();
                             e.preventDefault();
@@ -310,7 +312,7 @@ export default function ReelsCutterPage() {
                           style={{ left: `${(currentTime / duration) * 100}%` }}
                           onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; (e.target as Element).setPointerCapture(e.pointerId); }}
                           onPointerMove={(e) => { if (!seekDraggingRef.current || !seekBarRef.current || !videoRef.current) return; const rect = seekBarRef.current.getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                          onPointerUp={(e) => { seekDraggingRef.current = false; (e.target as Element).releasePointerCapture(e.pointerId); }}
+                          onPointerUp={(e) => { seekDraggingRef.current = false; (e.target as Element).releasePointerCapture(e.pointerId); if (videoRef.current && !videoRef.current.paused) scheduleJumpFromTime(videoRef.current.currentTime); }}
                         />
                       </div>
                     </div>
