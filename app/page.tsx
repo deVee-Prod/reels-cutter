@@ -6,7 +6,7 @@ import Image from 'next/image';
 function LabelFooter() {
   return (
     <div className="w-full mb-4 md:mb-8 flex flex-col items-center gap-4">
-      <p className="text-[7px] tracking-[0.15em] font-light text-white/50">
+      <p className="text-[10px] tracking-[0.15em] font-light text-white/65">
         Powered By deVee Boutique Label
       </p>
       <Image src="/label_logo.jpg" alt="deVee Label" width={48} height={48} className="rounded-full opacity-100 shadow-xl" />
