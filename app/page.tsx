@@ -510,7 +510,7 @@ export default function ReelsCutterPage() {
                 {processing ? "Analysing..." : "Cut Video"}
               </button>
             )}
-            ) : (
+            {segments && (
               <button onClick={renderVideo} disabled={processing} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black">Export Master</button>
             )}
           </div>
