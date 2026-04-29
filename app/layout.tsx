@@ -16,7 +16,7 @@ export const metadata = {
   title: 'Reels Cutter',
   description: 'Pro 1080p Video Processing by deVee Boutique Label',
   icons: {
-    icon: '/favicon.ico', // וודא שהקובץ נמצא בתיקיית public
+    icon: '/favicon.png',
   },
 }
 export default function RootLayout({
