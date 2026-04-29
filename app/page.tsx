@@ -278,7 +278,7 @@ export default function ReelsCutterPage() {
     return (
       <main className="min-h-[100dvh] bg-[#050505] flex flex-col items-center justify-between p-8 text-center">
         <div className="w-full mt-4 md:mt-8 flex flex-col items-center space-y-2">
-          <Image src="/logo.png" alt="Logo" width={88} height={28} className="mb-1 opacity-90" />
+          <Image src="/logo.png" alt="Logo" width={88} height={28} className="mb-1 opacity-90 block mx-auto" />
           <h1 className="text-[10px] tracking-[0.7em] font-bold uppercase italic text-white text-center">Reels Cutter</h1>
         </div>
         <div className="flex-1 flex flex-col justify-center w-full max-w-[340px]">
