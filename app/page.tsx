@@ -277,8 +277,9 @@ export default function ReelsCutterPage() {
   if (!authorized) {
     return (
       <div className="min-h-[100dvh] bg-[#050505] flex flex-col items-center text-center">
-        <header className="space-y-2 pt-8 pb-6">
-          <Image src="/logo.png" alt="Logo" width={100} height={32} className="mx-auto opacity-90" />
+        <header className="space-y-2 pt-8 pb-6 relative">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
+          <Image src="/logo.png" alt="Logo" width={100} height={32} className="mx-auto opacity-90 relative" />
           <p className="text-[9px] tracking-[0.3em] text-white/70 font-bold uppercase">REELS CUTTER</p>
         </header>
         <main className="flex-1 flex flex-col justify-center w-full max-w-[340px] px-4">
