@@ -348,7 +348,7 @@ export default function ReelsCutterPage() {
                 </div>
 
                 {segments && (
-                  <div className="flex flex-col items-center gap-1 -mt-4 mb-2 md:mt-0">
+                  <div className="flex flex-col items-center gap-1 mt-2 mb-2">
                     <p className="text-white/60 text-[8px] tracking-[0.12em] font-light">Don&apos;t worry about the quality — it&apos;s just a preview</p>
                     <p dir="rtl" className="text-white/60 text-[8px] tracking-[0.05em] font-light">לא לדאוג מהאיכות זה רק תצוגה מקדימה</p>
                   </div>
