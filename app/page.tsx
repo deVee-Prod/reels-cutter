@@ -305,15 +305,15 @@ export default function ReelsCutterPage() {
       <div className="w-full mt-4 md:mt-8 flex flex-col items-center z-10 text-center space-y-2 relative">
         <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
         <Image src="/logo.png" alt="Logo" width={110} height={35} className="mb-2 opacity-90 relative" />
-        <h1 className="text-[12px] tracking-[0.7em] font-bold uppercase italic text-white">Reels Cutter</h1>
+        <h1 className="text-[8px] tracking-[0.7em] font-bold uppercase italic text-white">Reels Cutter</h1>
       </div>
 
       <div className="w-full max-w-[550px] flex flex-col items-center gap-4 my-auto py-8">
         <div className="w-full bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-4 md:p-6 relative group shadow-2xl">
-          <div className="relative flex flex-col items-center">
+          <div className="relative flex flex-col items-center gap-4">
             {videoUrl ? (
               <div className="w-full flex flex-col items-center">
-                <div className="relative aspect-[9/16] w-[240px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-6 shadow-inner">
+                <div className="relative w-[200px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-2 shadow-inner flex-shrink-0" style={{ height: '356px' }}>
                   <video
                     ref={videoRef}
                     src={videoUrl}
@@ -380,7 +380,7 @@ export default function ReelsCutterPage() {
                         {segments.map((seg, i) => (
                           <button
                             key={`del-${i}`}
-                            className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white text-[12px] font-black transition-all leading-none border border-red-600 z-20"
+                            className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors"
                             style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }}
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}
