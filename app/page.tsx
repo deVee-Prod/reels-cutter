@@ -504,7 +504,11 @@ export default function ReelsCutterPage() {
               <button
                 onClick={analyzeVideo}
                 disabled={processing || !videoFile}
-                className={`w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black transition-all duration-300 ${videoFile ? 'bg-[#D4AF37] text-black' : 'bg-[#111111] text-white/20'}`}
+                className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black transition-all duration-500"
+                style={{
+                  backgroundColor: videoFile ? '#D4AF37' : '#111111',
+                  color: videoFile ? '#000000' : 'rgba(255,255,255,0.15)',
+                }}
               >
                 {processing ? "Analysing..." : "Extract Audio"}
               </button>
