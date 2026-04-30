@@ -14,46 +14,6 @@ function LabelFooter() {
   );
 }
 
-function generateSubtitlePNG(
-  word: string,
-  fontSize: number,
-  canvasW: number,
-  canvasH: number,
-  posFromBottomPct: number
-): Promise<Uint8Array> {
-  return new Promise((resolve) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvasW, canvasH);
-
-    const text = word.toUpperCase();
-    ctx.font = `900 ${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-
-    const x = canvasW / 2;
-    const y = canvasH - (canvasH * posFromBottomPct / 100);
-
-    // Match preview CSS: textShadow '0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9)'
-    ctx.shadowColor = 'rgba(0,0,0,0.9)';
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    ctx.fillStyle = 'white';
-    ctx.fillText(text, x, y);
-
-    ctx.shadowColor = 'rgba(0,0,0,1)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 1;
-    ctx.fillText(text, x, y);
-
-    canvas.toBlob((blob) => {
-      blob!.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)));
-    }, 'image/png');
-  });
-}
 
 function remapToExportTime(
   t: number,
@@ -332,69 +292,47 @@ export default function ReelsCutterPage() {
 
       const withSubtitles = (subtitleMode || subtitleAlwaysShow) && subtitleWords.length > 0;
 
-      // trim + concat chains (same regardless of subtitle mode)
-      let trimChains = '', concatInputs = '';
+      if (withSubtitles) {
+        setStatus("Loading font...");
+        const fontRes = await fetch('/Heebo.ttf');
+        if (!fontRes.ok) throw new Error('Heebo.ttf not found in /public');
+        await ffmpegRef.current.writeFile('myfont.ttf', new Uint8Array(await fontRes.arrayBuffer()));
+        setStatus("Rendering 1080p Master...");
+      }
+
+      const exportScale = 1080 / 200;
+
+      let f = '', c = '';
       segments.forEach((s, i) => {
         const e = s.end ?? duration;
-        trimChains += `[0:v]trim=start=${s.start}:end=${e},setpts=PTS-STARTPTS[v${i}];[0:a]atrim=start=${s.start}:end=${e},asetpts=PTS-STARTPTS[a${i}];`;
-        concatInputs += `[v${i}][a${i}]`;
+        f += `[0:v]trim=start=${s.start}:end=${e},setpts=PTS-STARTPTS[v${i}];[0:a]atrim=start=${s.start}:end=${e},asetpts=PTS-STARTPTS[a${i}];`;
+        c += `[v${i}][a${i}]`;
       });
 
-      if (!withSubtitles) {
-        const f = trimChains + `${concatInputs}concat=n=${segments.length}:v=1:a=1[vraw][outa];[vraw]fps=30,scale=1080:-2[outv]`;
-        await ffmpegRef.current.exec(['-i', 'input.mov', '-filter_complex', f, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24', 'out.mp4']);
-      } else {
-        // Canvas PNG overlay — renders with identical styles to the preview
-        setStatus("Generating subtitles...");
-        const v = videoRef.current;
-        const canvasW = 1080;
-        const canvasH = (v && v.videoWidth > 0)
-          ? Math.round(v.videoHeight * (canvasW / v.videoWidth) / 2) * 2
-          : 1920;
-        const exportScale = canvasW / 200;
-
-        for (let i = 0; i < subtitleWords.length; i++) {
-          const w = subtitleWords[i];
+      let drawtextChain = '';
+      if (withSubtitles) {
+        const dtFilters = subtitleWords.map((w, i) => {
+          const safeWord = w.word.trim()
+            .toUpperCase()
+            .replace(/'/g, '')
+            .replace(/:/g, '\\:')
+            .replace(/,/g, '\\,')
+            .replace(/\[/g, '\\[')
+            .replace(/\]/g, '\\]');
+          if (!safeWord) return null;
           const fontSize = Math.round([14, 20, 28][i % 3] * exportScale * fontScale);
-          const png = await generateSubtitlePNG(w.word, fontSize, canvasW, canvasH, subtitlePos);
-          await ffmpegRef.current.writeFile(`sub_${i}.png`, png);
-        }
-
-        setStatus("Rendering 1080p Master...");
-
-        // chain overlays on top of the concat output
-        let overlayFilters = '';
-        subtitleWords.forEach((w, i) => {
           const rs = remapToExportTime(w.start, segments, duration);
           const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
-          const inLabel = i === 0 ? 'base' : `ov${i - 1}`;
-          const outLabel = i === subtitleWords.length - 1 ? 'outv' : `ov${i}`;
-          overlayFilters += `[${inLabel}][${i + 1}:v]overlay=0:0:eof_action=pass:enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})'[${outLabel}];`;
-        });
-
-        const f = trimChains +
-          `${concatInputs}concat=n=${segments.length}:v=1:a=1[base][outa];` +
-          overlayFilters +
-          `[outv]fps=30,scale=1080:-2[finalv]`;
-
-        const extraInputs: string[] = [];
-        subtitleWords.forEach((_, i) => extraInputs.push('-loop', '1', '-i', `sub_${i}.png`));
-
-        await ffmpegRef.current.exec([
-          '-i', 'input.mov',
-          ...extraInputs,
-          '-filter_complex', f,
-          '-map', '[finalv]',
-          '-map', '[outa]',
-          '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24',
-          '-shortest',
-          'out.mp4'
-        ]);
-
-        for (let i = 0; i < subtitleWords.length; i++) {
-          await ffmpegRef.current.deleteFile(`sub_${i}.png`).catch(() => {});
-        }
+          const yPos = `h-(h*${subtitlePos}/100)-text_h`;
+          return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=white:bordercolor=black@0.55:borderw=1.5:shadowx=0:shadowy=3:shadowcolor=black@0.8`;
+        }).filter(Boolean);
+        if (dtFilters.length > 0) drawtextChain = dtFilters.join(',') + ',';
       }
+
+      f += `${c}concat=n=${segments.length}:v=1:a=1[vraw][outa];[vraw]${drawtextChain}fps=30,scale=1080:-2[outv]`;
+
+      await ffmpegRef.current.exec(['-i', 'input.mov', '-filter_complex', f, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24', 'out.mp4']);
+      if (withSubtitles) await ffmpegRef.current.deleteFile('myfont.ttf').catch(() => {});
 
       const url = URL.createObjectURL(new Blob([(await ffmpegRef.current.readFile('out.mp4') as any).buffer], { type: 'video/mp4' }));
       const a = document.createElement('a'); a.href = url; a.download = `deVee_${videoFile.name}.mp4`; a.click();
