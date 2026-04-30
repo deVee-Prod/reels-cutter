@@ -294,8 +294,8 @@ export default function ReelsCutterPage() {
 
       if (withSubtitles) {
         setStatus("Loading font...");
-        const fontRes = await fetch('/Heebo.ttf');
-        if (!fontRes.ok) throw new Error('Heebo.ttf not found in /public');
+        const fontRes = await fetch('/NotoSansTight.ttf');
+        if (!fontRes.ok) throw new Error('NotoSansTight.ttf not found in /public');
         await ffmpegRef.current.writeFile('myfont.ttf', new Uint8Array(await fontRes.arrayBuffer()));
         setStatus("Rendering 1080p Master...");
       }
@@ -324,7 +324,7 @@ export default function ReelsCutterPage() {
           const rs = remapToExportTime(w.start, segments, duration);
           const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
           const yPos = `h-(h*${subtitlePos}/100)-text_h`;
-          return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xEEEEEE:bordercolor=black@0.5:borderw=1.5:shadowx=0:shadowy=3:shadowcolor=black@0.8`;
+          return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xE2DED8:bordercolor=black@0.35:borderw=1:shadowx=0:shadowy=4:shadowcolor=black@0.85`;
         }).filter(Boolean);
         if (dtFilters.length > 0) drawtextChain = dtFilters.join(',') + ',';
       }
