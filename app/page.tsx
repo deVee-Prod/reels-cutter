@@ -73,8 +73,8 @@ export default function ReelsCutterPage() {
 
   useEffect(() => {
     import('./supabaseClient').then(({ supabase }) => {
-      supabase.auth.getSession().then(({ data: { session } }: { data: { session: unknown } }) => {
-        setAuthStatus(session ? 'ok' : 'login');
+      supabase.auth.getUser().then(({ data: { user } }: { data: { user: unknown } }) => {
+        setAuthStatus(user ? 'ok' : 'login');
       });
     });
   }, []);
