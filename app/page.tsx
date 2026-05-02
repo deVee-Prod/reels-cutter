@@ -359,11 +359,14 @@ export default function ReelsCutterPage() {
     return (
       <div style={{
         position: 'fixed', inset: 0, backgroundColor: '#000',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5rem',
       }}>
         <p style={{ color: '#fff', fontSize: '1.125rem', fontFamily: 'sans-serif' }}>
           Verifying Access to deVee Tools...
         </p>
+        <a href="https://devee-music.com" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', fontFamily: 'sans-serif', textDecoration: 'none', letterSpacing: '0.05em' }}>
+          ← Back to deVee Music
+        </a>
       </div>
     );
   }
