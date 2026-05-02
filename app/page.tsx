@@ -31,8 +31,8 @@ function remapToExportTime(
 }
 
 const CUT_ZOOM_SCALES = [1.0, 1.2, 1.0, 1.15, 1.0, 1.25, 1.0, 1.2];
-function getSegmentZoom(idx: number): number {
-  return CUT_ZOOM_SCALES[idx % CUT_ZOOM_SCALES.length];
+function getSegmentZoom(idx: number, freq: number): number {
+  return CUT_ZOOM_SCALES[Math.floor(idx / freq) % CUT_ZOOM_SCALES.length];
 }
 
 export default function ReelsCutterPage() {
@@ -58,6 +58,8 @@ export default function ReelsCutterPage() {
   const [subtitlePos, setSubtitlePos] = useState(25);
   const [fontScale, setFontScale] = useState(1);
   const [zoomPerCut, setZoomPerCut] = useState(false);
+  const [zoomMode, setZoomMode] = useState(false);
+  const [zoomFreq, setZoomFreq] = useState<1 | 4>(1);
 
   const ffmpegRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -320,7 +322,7 @@ export default function ReelsCutterPage() {
       let f = '', c = '';
       segments.forEach((s, i) => {
         const e = s.end ?? duration;
-        const segZoom = zoomPerCut ? getSegmentZoom(i) : 1.0;
+        const segZoom = zoomPerCut ? getSegmentZoom(i, zoomFreq) : 1.0;
         const zoomFilter = segZoom !== 1.0 ? `,crop=iw/${segZoom}:ih/${segZoom}:(iw-iw/${segZoom})/2:(ih-ih/${segZoom})/2` : '';
         f += `[0:v]trim=start=${s.start}:end=${e},setpts=PTS-STARTPTS${zoomFilter}[v${i}];[0:a]atrim=start=${s.start}:end=${e},asetpts=PTS-STARTPTS[a${i}];`;
         c += `[v${i}][a${i}]`;
@@ -412,7 +414,7 @@ export default function ReelsCutterPage() {
   const showSubtitleOverlay = (subtitleMode || subtitleAlwaysShow) && subtitleWords.length > 0 && !!segments;
 
   const currentSegIdx = segments ? segments.findIndex(s => currentTime >= s.start && currentTime <= (s.end ?? duration)) : -1;
-  const previewZoom = zoomPerCut && currentSegIdx >= 0 ? getSegmentZoom(currentSegIdx) : 1.0;
+  const previewZoom = zoomPerCut && currentSegIdx >= 0 ? getSegmentZoom(currentSegIdx, zoomFreq) : 1.0;
 
   return (
     <div className="min-h-[100dvh] bg-[#050505] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
@@ -493,7 +495,7 @@ export default function ReelsCutterPage() {
                 {segments && (
                   <div className="w-full mb-6 space-y-2">
 
-                    {!subtitleMode ? (
+                    {!subtitleMode && !zoomMode ? (
                       <>
                         {/* ── CUTTER MODE ── */}
                         <div className="flex items-center justify-between px-0.5">
@@ -546,13 +548,54 @@ export default function ReelsCutterPage() {
                         </div>
 
                         <div className="flex justify-center items-center gap-3">
-                          <button onClick={() => setZoomPerCut(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
+                          <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
                           {subtitleWords.length > 0 && (
                             <>
                               <button onClick={() => setSubtitleMode(true)} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50 transition-colors">CC</button>
                               <button onClick={() => setSubtitleAlwaysShow(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${subtitleAlwaysShow ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>CC Visible</button>
                             </>
                           )}
+                        </div>
+                      </>
+                    ) : zoomMode ? (
+                      <>
+                        {/* ── ZOOM MODE ── */}
+
+                        {/* Seek bar */}
+                        <div className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }}
+                          onClick={(e) => { if (!videoRef.current) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                        >
+                          <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
+                            <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+                          </div>
+                          <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                            onPointerMove={(e) => { if (!seekDraggingRef.current || !videoRef.current) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); videoRef.current.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                            onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); if (videoRef.current && !videoRef.current.paused) startLoop(); }}
+                          />
+                        </div>
+
+                        {/* Play controls */}
+                        <div className="flex justify-center items-center gap-3">
+                          <button onClick={() => { const v = videoRef.current; const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
+                          </button>
+                          <button onClick={() => paused ? videoRef.current?.play() : videoRef.current?.pause()} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
+                        </div>
+
+                        {/* Zoom settings */}
+                        <div className="flex flex-col items-center gap-3 py-2">
+                          <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Zoom Frequency</span>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => { setZoomFreq(1); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 1 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Fast</button>
+                            <button onClick={() => { setZoomFreq(4); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 4 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Subtle</button>
+                          </div>
+                        </div>
+
+                        {/* Bottom row: ← back | off toggle */}
+                        <div className="flex items-center justify-between px-0.5">
+                          <button onClick={() => setZoomMode(false)} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
+                          <button onClick={() => setZoomPerCut(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>{zoomPerCut ? 'Zoom On' : 'Zoom Off'}</button>
                         </div>
                       </>
                     ) : (
