@@ -197,10 +197,10 @@ export default function ReelsCutterPage() {
           if (bv && bufferReadyRef.current) {
             bv.muted = false;
             bv.play().then(() => {
-              v.pause();
-              v.muted = true;
               activeIsARef.current = !activeIsARef.current;
               setActiveIsA(activeIsARef.current);
+              v.pause();
+              v.muted = true;
               lastSegIdxRef.current = idx + 1;
               prefetchWarmedRef.current = false;
               bufferReadyRef.current = false;
