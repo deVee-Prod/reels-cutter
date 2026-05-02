@@ -72,15 +72,11 @@ export default function ReelsCutterPage() {
   const seekDraggingRef = useRef(false);
 
   useEffect(() => {
-    import('./supabaseClient').then(({ supabase }) => {
-      supabase.auth.refreshSession().then(({ data, error }: { data: { session: unknown }, error: unknown }) => {
-        if (data.session && !error) {
-          setAuthStatus('ok');
-        } else {
-          window.location.href = 'https://devee-music.com';
-        }
-      });
-    });
+    if (document.cookie.split(';').some(c => c.trim() === 'devee_auth=1')) {
+      setAuthStatus('ok');
+    } else {
+      window.location.href = 'https://devee-music.com';
+    }
   }, []);
 
   useEffect(() => {
