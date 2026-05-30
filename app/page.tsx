@@ -94,9 +94,6 @@ export default function ReelsCutterPage() {
   const durationRef = useRef<number>(0);
   const programmaticSeekRef = useRef(false);
   const warmingUpRef = useRef(false);
-  const prefetchWarmedRef = useRef(false);
-  const bufferReadyRef = useRef(false);
-  const lastSegIdxRef = useRef(-1);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const seekDraggingRef = useRef(false);
   const cutDoneRef = useRef(false);
@@ -172,9 +169,7 @@ const stopLoop = () => {
   const startLoop = () => {
     stopLoop();
     const tick = () => {
-      // Phase 2: cut done — straight playback, no segment jumping
       if (cutDoneRef.current) { rafRef.current = requestAnimationFrame(tick); return; }
-
       const v = getAV();
       const segs = segmentsRef.current;
       const dur = durationRef.current;
@@ -182,74 +177,27 @@ const stopLoop = () => {
       const t = v.currentTime;
       const inSeg = segs.find(s => t >= s.start && t <= (s.end ?? dur));
 
-      // Fallback seek — used for gap-jumps and when buffer isn't ready
-      const seekFallback = (target: number) => {
-        const av = getAV();
-        if (!av) return;
+      const seekTo = (target: number) => {
         programmaticSeekRef.current = true;
-        av.muted = true;
-        av.currentTime = target;
-        const fallback = setTimeout(() => { const av2 = getAV(); if (av2) { av2.muted = false; startLoop(); } }, 800);
-        av.addEventListener('seeked', () => { clearTimeout(fallback); const av2 = getAV(); if (av2) { av2.muted = false; startLoop(); } }, { once: true });
+        v.muted = true;
+        v.currentTime = target;
+        const done = () => { v.muted = false; startLoop(); };
+        const fallback = setTimeout(done, 800);
+        v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
       };
 
       if (!inSeg) {
         const next = segs.filter(s => s.start > t).sort((a, b) => a.start - b.start)[0];
-        if (next) seekFallback(next.start); else v.pause();
+        if (next) seekTo(next.start); else v.pause();
         rafRef.current = null; return;
       }
 
-      const idx = segs.indexOf(inSeg);
-      if (idx !== lastSegIdxRef.current) { lastSegIdxRef.current = idx; prefetchWarmedRef.current = false; bufferReadyRef.current = false; }
-
-      // STEP 1 — warm the buffer: seek it to nextSeg.start, play 400ms, re-seek to exact start
-      if (inSeg.end !== null && t >= inSeg.end - 1.5 && !prefetchWarmedRef.current) {
-        const nextSeg = segs[idx + 1];
-        const bv = getBV();
-        if (nextSeg && bv) {
-          prefetchWarmedRef.current = true;
-          bufferReadyRef.current = false;
-          bv.muted = true;
-          bv.currentTime = nextSeg.start;
-          bv.play().catch(() => {});
-          setTimeout(() => {
-            if (!bv) return;
-            bv.pause();
-            bv.currentTime = nextSeg.start;
-            const onReady = () => { bufferReadyRef.current = true; };
-            bv.addEventListener('seeked', onReady, { once: true });
-            setTimeout(() => { bufferReadyRef.current = true; }, 200);
-          }, 400);
-        }
-      }
-
-      // STEP 2 — swap: at cut time, show buffer instead of seeking active video
-      if (inSeg.end !== null && t >= inSeg.end - 0.1) {
-        const nextSeg = segs[idx + 1];
-        if (nextSeg) {
-          const bv = getBV();
-          if (bv && bufferReadyRef.current) {
-            // Stop av immediately — prevents it playing into silence while bv.play() resolves
-            v.pause();
-            v.muted = true;
-            // Swap visually now — bv shows its warmup frame (nextSeg.start) instantly
-            activeIsARef.current = !activeIsARef.current;
-            setActiveIsA(activeIsARef.current);
-            bv.muted = false;
-            bv.play().then(() => {
-              lastSegIdxRef.current = idx + 1;
-              prefetchWarmedRef.current = false;
-              bufferReadyRef.current = false;
-              startLoop();
-            }).catch(() => seekFallback(nextSeg.start));
-          } else {
-            seekFallback(nextSeg.start);
-          }
-        } else {
-          v.pause();
-        }
+      if (inSeg.end !== null && t >= inSeg.end - 0.08) {
+        const nextSeg = segs[segs.indexOf(inSeg) + 1];
+        if (nextSeg) seekTo(nextSeg.start); else v.pause();
         rafRef.current = null; return;
       }
+
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
