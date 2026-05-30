@@ -134,6 +134,11 @@ export default function ReelsCutterPage() {
   }, []);
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); stopDrawLoop(); }, []);
   useEffect(() => { if (videoUrl) startDrawLoop(); }, [videoUrl]);
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden && videoUrl) startDrawLoop(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [videoUrl]);
   useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
   useEffect(() => {
@@ -176,10 +181,9 @@ export default function ReelsCutterPage() {
       const v = activeIsARef.current ? videoARef.current : videoBRef.current;
       if (canvas && v && v.readyState >= 2 && v.videoWidth > 0) {
         const ctx = canvas.getContext('2d');
-        if (ctx) {
-          if (canvas.width !== v.videoWidth) { canvas.width = v.videoWidth; canvas.height = v.videoHeight; }
-          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-        }
+        if (!ctx) { drawLoopRef.current = requestAnimationFrame(draw); return; }
+        if (canvas.width !== v.videoWidth) { canvas.width = v.videoWidth; canvas.height = v.videoHeight; }
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
       }
       drawLoopRef.current = requestAnimationFrame(draw);
     };
@@ -639,8 +643,8 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (!activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute pointer-events-none"
-                    style={{ opacity: 0, width: 1, height: 1 }}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={{ opacity: 0 }}
                     playsInline
                   />
                   {/* Video B — audio only; swaps with A at each cut */}
@@ -655,8 +659,8 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute pointer-events-none"
-                    style={{ opacity: 0, width: 1, height: 1 }}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={{ opacity: 0 }}
                     playsInline
                   />
                   {/* Canvas — shows video frames, zoom applied here */}
