@@ -106,10 +106,10 @@ export default function Timeline({
   useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
   const chunksRef = useRef(chunks);
   useEffect(() => { chunksRef.current = chunks; });
-  const safeDurationRef = useRef(safeDuration);
-  useEffect(() => { safeDurationRef.current = safeDuration; });
 
   const safeDuration = Math.max(1, Number.isFinite(duration) ? duration : 0);
+  const safeDurationRef = useRef(safeDuration);
+  useEffect(() => { safeDurationRef.current = safeDuration; });
   const totalWidth = Math.max(800, Math.ceil(safeDuration * PX_PER_SEC));
 
   const flatWords = useMemo<FlatWord[]>(() => {
