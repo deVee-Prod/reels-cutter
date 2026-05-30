@@ -104,8 +104,6 @@ export default function Timeline({
   useEffect(() => { onWordDeleteRef.current = onWordDelete; });
   const onWordTimingChangeRef = useRef(onWordTimingChange);
   useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
-  const pendingFlushRef = useRef<number | null>(null);
-  const latestPatchRef = useRef<{ ci: number; wi: number; patch: Partial<Word> } | null>(null);
   const chunksRef = useRef(chunks);
   useEffect(() => { chunksRef.current = chunks; });
 
@@ -249,16 +247,7 @@ export default function Timeline({
         tooltipTime = newStart;
       }
 
-      // Throttle parent state updates to RAF frequency — pointermove can fire at 120Hz+
-      latestPatchRef.current = { ci: drag.fw.chunkIndex, wi: drag.fw.wordIndex, patch };
-      if (pendingFlushRef.current === null) {
-        pendingFlushRef.current = requestAnimationFrame(() => {
-          if (latestPatchRef.current) {
-            onWordTimingChangeRef.current(latestPatchRef.current.ci, latestPatchRef.current.wi, latestPatchRef.current.patch);
-          }
-          pendingFlushRef.current = null;
-        });
-      }
+      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
       const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }

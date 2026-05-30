@@ -154,7 +154,7 @@ export default function ReelsCutterPage() {
     const card = container.children[activeIdx] as HTMLElement;
     if (!card) return;
     container.scrollLeft = Math.max(0, card.offsetLeft - container.clientWidth / 2 + card.offsetWidth / 2);
-  }, [currentTime, segments, subtitleWords, duration, subtitleMode]);
+  }, [currentTime, segments, duration, subtitleMode]);
 
   const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
   const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
