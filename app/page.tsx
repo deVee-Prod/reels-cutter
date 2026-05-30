@@ -84,8 +84,6 @@ export default function ReelsCutterPage() {
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
   const activeIsARef = useRef(true);
-  const canvasPreviewRef = useRef<HTMLCanvasElement>(null);
-  const drawLoopRef = useRef<number | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const wordCardsRef = useRef<HTMLDivElement>(null);
@@ -132,13 +130,7 @@ export default function ReelsCutterPage() {
       font.load().then(f => { document.fonts.add(f); setLoadedFonts(prev => new Set([...prev, id])); }).catch(() => {});
     });
   }, []);
-  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); stopDrawLoop(); }, []);
-  useEffect(() => { if (videoUrl) startDrawLoop(); }, [videoUrl]);
-  useEffect(() => {
-    const onVisible = () => { if (!document.hidden && videoUrl) startDrawLoop(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [videoUrl]);
+  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
   useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
   useEffect(() => {
@@ -170,27 +162,7 @@ export default function ReelsCutterPage() {
   const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
   const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
 
-  const stopDrawLoop = () => {
-    if (drawLoopRef.current !== null) { cancelAnimationFrame(drawLoopRef.current); drawLoopRef.current = null; }
-  };
-
-  const startDrawLoop = () => {
-    stopDrawLoop();
-    const draw = () => {
-      const canvas = canvasPreviewRef.current;
-      const v = activeIsARef.current ? videoARef.current : videoBRef.current;
-      if (canvas && v && v.readyState >= 2 && v.videoWidth > 0) {
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { drawLoopRef.current = requestAnimationFrame(draw); return; }
-        if (canvas.width !== v.videoWidth) { canvas.width = v.videoWidth; canvas.height = v.videoHeight; }
-        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-      }
-      drawLoopRef.current = requestAnimationFrame(draw);
-    };
-    drawLoopRef.current = requestAnimationFrame(draw);
-  };
-
-  const stopLoop = () => {
+const stopLoop = () => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -624,7 +596,7 @@ export default function ReelsCutterPage() {
                   style={{ height: '356px' }}
                   onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }}
                 >
-                  {/* Video A — audio only; canvas draws its frames */}
+                  {/* Video A */}
                   <video
                     ref={videoARef}
                     src={videoUrl}
@@ -643,11 +615,11 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (!activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ opacity: 0.001 }}
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    style={{ opacity: activeIsA ? 1 : 0, zIndex: activeIsA ? 1 : 0, transform: `scale(${previewZoom})`, transition: 'transform 0.06s ease' }}
                     playsInline
                   />
-                  {/* Video B — audio only; swaps with A at each cut */}
+                  {/* Video B */}
                   <video
                     ref={videoBRef}
                     src={videoUrl ?? undefined}
@@ -659,15 +631,9 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ opacity: 0 }}
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    style={{ opacity: activeIsA ? 0 : 1, zIndex: activeIsA ? 0 : 1, transform: `scale(${previewZoom})`, transition: 'transform 0.06s ease' }}
                     playsInline
-                  />
-                  {/* Canvas — shows video frames, zoom applied here */}
-                  <canvas
-                    ref={canvasPreviewRef}
-                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                    style={{ transform: `scale(${previewZoom})`, transition: 'transform 0.06s ease' }}
                   />
 
                   {/* Subtitle overlay — visible in both CC mode and when subtitleAlwaysShow is on */}
