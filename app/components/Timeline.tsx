@@ -106,6 +106,8 @@ export default function Timeline({
   useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
   const chunksRef = useRef(chunks);
   useEffect(() => { chunksRef.current = chunks; });
+  const blockRefsMap = useRef<Map<string, HTMLElement>>(new Map());
+  const latestPatchRef = useRef<{ ci: number; wi: number; patch: Partial<Word> } | null>(null);
 
   const safeDuration = Math.max(1, Number.isFinite(duration) ? duration : 0);
   const safeDurationRef = useRef(safeDuration);
@@ -247,12 +249,27 @@ export default function Timeline({
         tooltipTime = newStart;
       }
 
-      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
+      // Direct DOM update — no React render during drag
+      const currentWord = chunksRef.current[drag.fw.chunkIndex].words[drag.fw.wordIndex];
+      const newStart = patch.start ?? currentWord.start;
+      const newEnd   = patch.end   ?? currentWord.end;
+      const el = blockRefsMap.current.get(`${drag.fw.chunkIndex}-${drag.fw.wordIndex}`);
+      if (el) {
+        el.style.left  = `${newStart * PX_PER_SEC}px`;
+        el.style.width = `${Math.max(8, (newEnd - newStart) * PX_PER_SEC)}px`;
+      }
+      latestPatchRef.current = { ci: drag.fw.chunkIndex, wi: drag.fw.wordIndex, patch };
+
       const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }
 
     function onUp(e: PointerEvent) {
+      // Commit final position to parent state (single React update)
+      if (latestPatchRef.current) {
+        onWordTimingChangeRef.current(latestPatchRef.current.ci, latestPatchRef.current.wi, latestPatchRef.current.patch);
+        latestPatchRef.current = null;
+      }
       if (drag) {
         const movedX = Math.abs(e.clientX - drag.startClientX);
         const movedY = Math.abs(e.clientY - drag.startClientY);
@@ -410,6 +427,7 @@ export default function Timeline({
               return (
                 <div
                   key={`${fw.chunkIndex}-${fw.wordIndex}`}
+                  ref={(el) => { const k = `${fw.chunkIndex}-${fw.wordIndex}`; if (el) blockRefsMap.current.set(k, el); else blockRefsMap.current.delete(k); }}
                   onPointerDown={(e) => onBodyPointerDown(e, fw)}
                   className={cls}
                   style={{ left: `${left}px`, width: `${width}px`, cursor: isEditing ? 'text' : 'grab', touchAction: 'none' }}
