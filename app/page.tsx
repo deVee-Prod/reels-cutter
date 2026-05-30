@@ -86,6 +86,8 @@ export default function ReelsCutterPage() {
   const cutDoneRef = useRef(false);
   const origVideoUrlRef = useRef<string | null>(null);
   const origSubtitleWordsRef = useRef<{ word: string; start: number; end: number }[]>([]);
+  const origVideoWidthRef = useRef(0);
+  const origWidthCapturedRef = useRef(false);
 
   useEffect(() => {
     if (document.cookie.split(';').some(c => c.trim() === 'devee_auth=1')) {
@@ -278,6 +280,7 @@ export default function ReelsCutterPage() {
       setSubtitleMode(false);
       setSubtitleAlwaysShow(false);
       setCutDone(false);
+      origWidthCapturedRef.current = false;
       setProgress(0);
       setStatus("Ready");
       activeIsARef.current = true;
@@ -422,7 +425,7 @@ export default function ReelsCutterPage() {
         setStatus("Rendering 1080p Master...");
       }
 
-      const exportScale = 1080 / 200;
+      const exportScale = (origVideoWidthRef.current || 1080) / 200;
 
       let f = '', c = '';
       segments.forEach((s, i) => {
@@ -453,7 +456,7 @@ export default function ReelsCutterPage() {
         if (dtFilters.length > 0) drawtextChain = dtFilters.join(',') + ',';
       }
 
-      f += `${c}concat=n=${segments.length}:v=1:a=1[vraw][outa];[vraw]${drawtextChain}fps=30,scale=1080:-2[outv]`;
+      f += `${c}concat=n=${segments.length}:v=1:a=1[vraw][outa];[vraw]${drawtextChain}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[outv]`;
 
       await ffmpegRef.current.exec(['-i', 'input.mov', '-filter_complex', f, '-map', '[outv]', '-map', '[outa]', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24', 'out.mp4']);
       if (withSubtitles) await ffmpegRef.current.deleteFile('myfont.ttf').catch(() => {});
@@ -545,7 +548,13 @@ export default function ReelsCutterPage() {
                   <video
                     ref={videoARef}
                     src={videoUrl}
-                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onLoadedMetadata={(e) => {
+                      setDuration(e.currentTarget.duration);
+                      if (!origWidthCapturedRef.current && e.currentTarget.videoWidth > 0) {
+                        origVideoWidthRef.current = e.currentTarget.videoWidth;
+                        origWidthCapturedRef.current = true;
+                      }
+                    }}
                     onTimeUpdate={handleTimeUpdate}
                     onPlay={() => { if (!activeIsARef.current) return; if (!warmingUpRef.current) setPaused(false); startLoop(); }}
                     onSeeked={(e) => {
