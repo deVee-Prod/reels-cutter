@@ -4,6 +4,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Timeline from './components/Timeline';
 
+const FONTS = [
+  { id: 'NotoSansTight',        label: 'Noto Tight',    file: '/NotoSansTight.ttf'               },
+  { id: 'NotoSansHebrewBlack',  label: 'Noto Hebrew',   file: '/NotoSansHebrew-Black.ttf'        },
+  { id: 'NotoSansHebrewEB',     label: 'Noto HEB XB',   file: '/NotoSansHebrew-ExtraBold.ttf'    },
+  { id: 'RubikBlack',           label: 'Rubik Black',   file: '/Rubik-Black.ttf'                 },
+  { id: 'Heebo',                label: 'Heebo',         file: '/Heebo.ttf'                       },
+  { id: 'SecularOne',           label: 'Secular One',   file: '/SecularOne-Regular.ttf'          },
+  { id: 'VarelaRound',          label: 'Varela Round',  file: '/VarelaRound-Regular.ttf'         },
+  { id: 'FrankRuhlLibreBold',   label: 'Frank Ruhl',    file: '/FrankRuhlLibre-Bold.ttf'        },
+] as const;
+type FontId = typeof FONTS[number]['id'];
+
 function LabelFooter() {
   return (
     <footer className="w-full py-12 flex flex-col items-center space-y-4 mt-auto">
@@ -54,6 +66,9 @@ export default function ReelsCutterPage() {
   const [paused, setPaused] = useState(true);
   const [zoom, setZoom] = useState(4);
   const [waveformBg, setWaveformBg] = useState<string | null>(null);
+  const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
+  const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
+  const fontFamilyRef = useRef<FontId>('NotoSansTight');
   const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number }[]>([]);
   const [subtitleMode, setSubtitleMode] = useState(false);
   const [subtitleAlwaysShow, setSubtitleAlwaysShow] = useState(false);
@@ -108,6 +123,13 @@ export default function ReelsCutterPage() {
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   useEffect(() => { durationRef.current = duration; }, [duration]);
   useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
+  useEffect(() => { fontFamilyRef.current = fontFamily; }, [fontFamily]);
+  useEffect(() => {
+    FONTS.forEach(({ id, file }) => {
+      const font = new FontFace(id, `url(${file})`);
+      font.load().then(f => { document.fonts.add(f); setLoadedFonts(prev => new Set([...prev, id])); }).catch(() => {});
+    });
+  }, []);
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
   useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
@@ -448,7 +470,8 @@ export default function ReelsCutterPage() {
 
       if (withSubtitles) {
         setStatus("Loading font...");
-        const fontRes = await fetch('/NotoSansTight.ttf');
+        const selectedFont = FONTS.find(f => f.id === fontFamily) ?? FONTS[0];
+        const fontRes = await fetch(selectedFont.file);
         if (!fontRes.ok) throw new Error('NotoSansTight.ttf not found in /public');
         await ffmpegRef.current.writeFile('myfont.ttf', new Uint8Array(await fontRes.arrayBuffer()));
         setStatus("Rendering 1080p Master...");
@@ -625,7 +648,7 @@ export default function ReelsCutterPage() {
                     const fontSize = [14, 20, 28][idx % 3] * fontScale;
                     return (
                       <div className="absolute left-0 right-0 flex justify-center px-2 pointer-events-none z-10" style={{ bottom: `${subtitlePos}%` }}>
-                        <span className="uppercase leading-none" style={{ fontSize: `${fontSize}px`, fontWeight: 900, letterSpacing: '-0.04em', color: '#ffffff', textShadow: '0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9)', WebkitFontSmoothing: 'antialiased' } as React.CSSProperties}>
+                        <span className="uppercase leading-none" style={{ fontSize: `${fontSize}px`, fontWeight: 900, letterSpacing: '-0.04em', color: '#ffffff', fontFamily: `'${fontFamily}', sans-serif`, textShadow: '0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9)', WebkitFontSmoothing: 'antialiased' } as React.CSSProperties}>
                           {wordObj.word}
                         </span>
                       </div>
@@ -817,6 +840,16 @@ export default function ReelsCutterPage() {
                             setPaused(true);
                           }}
                         />
+
+                        {/* Font selector */}
+                        <div className="flex gap-1.5 overflow-x-auto select-none" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+                          {FONTS.filter(f => loadedFonts.has(f.id)).map(f => (
+                            <button key={f.id} onClick={() => setFontFamily(f.id)}
+                              className={`flex-shrink-0 px-3 py-1.5 rounded-lg border text-[9px] tracking-wide transition-colors ${fontFamily === f.id ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]' : 'bg-white/[0.03] border-white/[0.06] text-white/30 hover:text-white/50'}`}
+                              style={{ fontFamily: f.id }}
+                            >{f.label}</button>
+                          ))}
+                        </div>
 
                         {/* Bottom row: ← back | size | pos | ✓ show in cut */}
                         <div className="flex items-center justify-between px-0.5 gap-2">
