@@ -62,6 +62,7 @@ export default function ReelsCutterPage() {
   const [zoomMode, setZoomMode] = useState(false);
   const [zoomFreq, setZoomFreq] = useState<1 | 4>(1);
   const [activeIsA, setActiveIsA] = useState(true);
+  const [cutDone, setCutDone] = useState(false);
 
   const ffmpegRef = useRef<any>(null);
   const videoARef = useRef<HTMLVideoElement>(null);
@@ -82,6 +83,9 @@ export default function ReelsCutterPage() {
   const lastSegIdxRef = useRef(-1);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const seekDraggingRef = useRef(false);
+  const cutDoneRef = useRef(false);
+  const origVideoUrlRef = useRef<string | null>(null);
+  const origSubtitleWordsRef = useRef<{ word: string; start: number; end: number }[]>([]);
 
   useEffect(() => {
     if (document.cookie.split(';').some(c => c.trim() === 'devee_auth=1')) {
@@ -100,6 +104,7 @@ export default function ReelsCutterPage() {
 
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
   useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
@@ -142,6 +147,9 @@ export default function ReelsCutterPage() {
   const startLoop = () => {
     stopLoop();
     const tick = () => {
+      // Phase 2: cut done — straight playback, no segment jumping
+      if (cutDoneRef.current) { rafRef.current = requestAnimationFrame(tick); return; }
+
       const v = getAV();
       const segs = segmentsRef.current;
       const dur = durationRef.current;
@@ -269,6 +277,7 @@ export default function ReelsCutterPage() {
       setSubtitleWords([]);
       setSubtitleMode(false);
       setSubtitleAlwaysShow(false);
+      setCutDone(false);
       setProgress(0);
       setStatus("Ready");
       activeIsARef.current = true;
@@ -343,6 +352,57 @@ export default function ReelsCutterPage() {
     }
   };
 
+  const finishCutting = async () => {
+    if (!segments || !ffmpegRef.current) return;
+    setProcessing(true);
+    setStatus("Cutting preview...");
+    setProgress(0);
+    try {
+      let f = '', c = '';
+      segments.forEach((s, i) => {
+        const e = s.end ?? duration;
+        f += `[0:v]trim=start=${s.start}:end=${e},setpts=PTS-STARTPTS[v${i}];[0:a]atrim=start=${s.start}:end=${e},asetpts=PTS-STARTPTS[a${i}];`;
+        c += `[v${i}][a${i}]`;
+      });
+      f += `${c}concat=n=${segments.length}:v=1:a=1[outv][outa]`;
+
+      await ffmpegRef.current.exec([
+        '-y', '-i', 'preview.mp4',
+        '-filter_complex', f,
+        '-map', '[outv]', '-map', '[outa]',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+        'cut_preview.mp4',
+      ]);
+
+      const cutData = await ffmpegRef.current.readFile('cut_preview.mp4');
+      const cutUrl = URL.createObjectURL(new Blob([(cutData as any).buffer], { type: 'video/mp4' }));
+
+      // Remap subtitle timestamps to cut timeline
+      const remapped = subtitleWords.map(w => ({
+        ...w,
+        start: Number(remapToExportTime(w.start, segments, duration).toFixed(3)),
+        end:   Number(Math.max(
+          remapToExportTime(w.start, segments, duration) + 0.05,
+          remapToExportTime(w.end,   segments, duration)
+        ).toFixed(3)),
+      }));
+
+      // Save originals for "go back"
+      origVideoUrlRef.current = videoUrl;
+      origSubtitleWordsRef.current = subtitleWords;
+
+      setVideoUrl(cutUrl);
+      setSubtitleWords(remapped);
+      setCutDone(true);
+      setSubtitleMode(true);
+      setStatus("Edit Subtitles");
+    } catch {
+      setStatus("Error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const renderVideo = async () => {
     if (!videoFile || !segments) return;
     setProcessing(true);
@@ -385,8 +445,8 @@ export default function ReelsCutterPage() {
             .replace(/\]/g, '\\]');
           if (!safeWord) return null;
           const fontSize = Math.round([14, 20, 28][i % 3] * exportScale * fontScale);
-          const rs = remapToExportTime(w.start, segments, duration);
-          const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
+          const rs = cutDone ? w.start : remapToExportTime(w.start, segments, duration);
+          const re = cutDone ? Math.max(w.start + 0.08, w.end) : Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
           const yPos = `h-(h*${subtitlePos}/100)-text_h`;
           return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xECE9E4:bordercolor=black@0.9:borderw=2:shadowx=0:shadowy=2:shadowcolor=black@0.95:box=1:boxcolor=black@0.18:boxborderw=14`;
         }).filter(Boolean);
@@ -455,7 +515,7 @@ export default function ReelsCutterPage() {
     );
   }
 
-  const remappedCurrentTime = segments ? remapToExportTime(currentTime, segments, duration) : currentTime;
+  const remappedCurrentTime = cutDone ? currentTime : (segments ? remapToExportTime(currentTime, segments, duration) : currentTime);
   const showSubtitleOverlay = (subtitleMode || subtitleAlwaysShow) && subtitleWords.length > 0 && !!segments;
 
   const currentSegIdx = segments ? segments.findIndex(s => currentTime >= s.start && currentTime <= (s.end ?? duration)) : -1;
@@ -518,8 +578,8 @@ export default function ReelsCutterPage() {
                   {/* Subtitle overlay — visible in both CC mode and when subtitleAlwaysShow is on */}
                   {showSubtitleOverlay && (() => {
                     const wordObj = subtitleWords.find(w => {
-                      const rs = remapToExportTime(w.start, segments!, duration);
-                      const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments!, duration));
+                      const rs = cutDone ? w.start : remapToExportTime(w.start, segments!, duration);
+                      const re = cutDone ? Math.max(w.start + 0.08, w.end) : Math.max(rs + 0.08, remapToExportTime(w.end, segments!, duration));
                       return remappedCurrentTime >= rs && remappedCurrentTime <= re;
                     });
                     if (!wordObj) return null;
@@ -616,7 +676,7 @@ export default function ReelsCutterPage() {
                           <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
                           {subtitleWords.length > 0 && (
                             <>
-                              <button onClick={() => setSubtitleMode(true)} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50 transition-colors">CC</button>
+                              <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50 transition-colors">CC →</button>
                               <button onClick={() => setSubtitleAlwaysShow(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${subtitleAlwaysShow ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>CC Visible</button>
                             </>
                           )}
@@ -719,7 +779,14 @@ export default function ReelsCutterPage() {
 
                         {/* Bottom row: ← back | size | pos | ✓ show in cut */}
                         <div className="flex items-center justify-between px-0.5 gap-2">
-                          <button onClick={() => setSubtitleMode(false)} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
+                          <button onClick={() => {
+                            if (cutDone) {
+                              setVideoUrl(origVideoUrlRef.current!);
+                              setSubtitleWords(origSubtitleWordsRef.current);
+                              setCutDone(false);
+                            }
+                            setSubtitleMode(false);
+                          }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
                           <div className="flex items-center gap-1.5">
                             <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Size</span>
                             <input type="range" min="0.5" max="2" step="0.1" value={fontScale} onChange={e => setFontScale(parseFloat(e.target.value))} className="w-16 accent-[#D4AF37]" />
