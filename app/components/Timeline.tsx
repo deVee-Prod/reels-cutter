@@ -106,8 +106,6 @@ export default function Timeline({
   useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
   const chunksRef = useRef(chunks);
   useEffect(() => { chunksRef.current = chunks; });
-  const blockRefsMap = useRef<Map<string, HTMLElement>>(new Map());
-  const latestPatchRef = useRef<{ ci: number; wi: number; patch: Partial<Word> } | null>(null);
 
   const safeDuration = Math.max(1, Number.isFinite(duration) ? duration : 0);
   const safeDurationRef = useRef(safeDuration);
@@ -249,27 +247,12 @@ export default function Timeline({
         tooltipTime = newStart;
       }
 
-      // Direct DOM update — no React render during drag
-      const currentWord = chunksRef.current[drag.fw.chunkIndex].words[drag.fw.wordIndex];
-      const newStart = patch.start ?? currentWord.start;
-      const newEnd   = patch.end   ?? currentWord.end;
-      const el = blockRefsMap.current.get(`${drag.fw.chunkIndex}-${drag.fw.wordIndex}`);
-      if (el) {
-        el.style.left  = `${newStart * PX_PER_SEC}px`;
-        el.style.width = `${Math.max(8, (newEnd - newStart) * PX_PER_SEC)}px`;
-      }
-      latestPatchRef.current = { ci: drag.fw.chunkIndex, wi: drag.fw.wordIndex, patch };
-
+      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
       const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }
 
     function onUp(e: PointerEvent) {
-      // Commit final position to parent state (single React update)
-      if (latestPatchRef.current) {
-        onWordTimingChangeRef.current(latestPatchRef.current.ci, latestPatchRef.current.wi, latestPatchRef.current.patch);
-        latestPatchRef.current = null;
-      }
       if (drag) {
         const movedX = Math.abs(e.clientX - drag.startClientX);
         const movedY = Math.abs(e.clientY - drag.startClientY);
@@ -411,12 +394,8 @@ export default function Timeline({
           <div className="absolute inset-x-0" style={{ top: `${RULER_HEIGHT + 6}px`, height: `${TRACK_HEIGHT}px` }}>
             {flatWords.map((fw) => {
               const isActive = drag?.fw.chunkIndex === fw.chunkIndex && drag?.fw.wordIndex === fw.wordIndex;
-              // During drag, read latest position from ref so React doesn't revert our direct DOM updates
-              const lp = latestPatchRef.current;
-              const displayStart = isActive && lp ? (lp.patch.start ?? fw.start) : fw.start;
-              const displayEnd   = isActive && lp ? (lp.patch.end   ?? fw.end)   : fw.end;
-              const left = displayStart * PX_PER_SEC;
-              const width = Math.max(8, (displayEnd - displayStart) * PX_PER_SEC);
+              const left = fw.start * PX_PER_SEC;
+              const width = Math.max(8, (fw.end - fw.start) * PX_PER_SEC);
               const handleW = Math.min(16, Math.max(6, Math.floor(width / 3)));
               const isEditing = editingKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const isSelected = selectedKey === `${fw.chunkIndex}-${fw.wordIndex}`;
@@ -431,7 +410,6 @@ export default function Timeline({
               return (
                 <div
                   key={`${fw.chunkIndex}-${fw.wordIndex}`}
-                  ref={(el) => { const k = `${fw.chunkIndex}-${fw.wordIndex}`; if (el) blockRefsMap.current.set(k, el); else blockRefsMap.current.delete(k); }}
                   onPointerDown={(e) => onBodyPointerDown(e, fw)}
                   className={cls}
                   style={{ left: `${left}px`, width: `${width}px`, cursor: isEditing ? 'text' : 'grab', touchAction: 'none' }}
