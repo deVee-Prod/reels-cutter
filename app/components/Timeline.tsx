@@ -410,10 +410,14 @@ export default function Timeline({
           {/* Word blocks */}
           <div className="absolute inset-x-0" style={{ top: `${RULER_HEIGHT + 6}px`, height: `${TRACK_HEIGHT}px` }}>
             {flatWords.map((fw) => {
-              const left = fw.start * PX_PER_SEC;
-              const width = Math.max(8, (fw.end - fw.start) * PX_PER_SEC);
-              const handleW = Math.min(16, Math.max(6, Math.floor(width / 3)));
               const isActive = drag?.fw.chunkIndex === fw.chunkIndex && drag?.fw.wordIndex === fw.wordIndex;
+              // During drag, read latest position from ref so React doesn't revert our direct DOM updates
+              const lp = latestPatchRef.current;
+              const displayStart = isActive && lp ? (lp.patch.start ?? fw.start) : fw.start;
+              const displayEnd   = isActive && lp ? (lp.patch.end   ?? fw.end)   : fw.end;
+              const left = displayStart * PX_PER_SEC;
+              const width = Math.max(8, (displayEnd - displayStart) * PX_PER_SEC);
+              const handleW = Math.min(16, Math.max(6, Math.floor(width / 3)));
               const isEditing = editingKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const isSelected = selectedKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const cls = [
