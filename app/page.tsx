@@ -451,7 +451,7 @@ const stopLoop = () => {
           const rs = cutDone ? w.start : remapToExportTime(w.start, segments, duration);
           const re = cutDone ? Math.max(w.start + 0.08, w.end) : Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
           const yPos = `h-(h*${subtitlePos}/100)-text_h`;
-          return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xECE9E4:bordercolor=black@0.9:borderw=2:shadowx=0:shadowy=2:shadowcolor=black@0.95:box=1:boxcolor=black@0.18:boxborderw=14`;
+          return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xECE9E4:bordercolor=black@0.9:borderw=2:shadowx=0:shadowy=2:shadowcolor=black@0.95`;
         }).filter(Boolean);
         if (dtFilters.length > 0) drawtextChain = dtFilters.join(',') + ',';
       }
