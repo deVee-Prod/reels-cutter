@@ -206,12 +206,14 @@ export default function ReelsCutterPage() {
         if (nextSeg) {
           const bv = getBV();
           if (bv && bufferReadyRef.current) {
+            // Stop av immediately — prevents it playing into silence while bv.play() resolves
+            v.pause();
+            v.muted = true;
+            // Swap visually now — bv shows its warmup frame (nextSeg.start) instantly
+            activeIsARef.current = !activeIsARef.current;
+            setActiveIsA(activeIsARef.current);
             bv.muted = false;
             bv.play().then(() => {
-              activeIsARef.current = !activeIsARef.current;
-              setActiveIsA(activeIsARef.current);
-              v.pause();
-              v.muted = true;
               lastSegIdxRef.current = idx + 1;
               prefetchWarmedRef.current = false;
               bufferReadyRef.current = false;
