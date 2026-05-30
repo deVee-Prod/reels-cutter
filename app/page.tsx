@@ -644,7 +644,7 @@ export default function ReelsCutterPage() {
                     }}
                     onPause={() => { if (!activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
                     className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ opacity: 0 }}
+                    style={{ opacity: 0.001 }}
                     playsInline
                   />
                   {/* Video B — audio only; swaps with A at each cut */}
