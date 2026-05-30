@@ -53,6 +53,7 @@ export default function ReelsCutterPage() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [paused, setPaused] = useState(true);
   const [zoom, setZoom] = useState(4);
+  const [waveformBg, setWaveformBg] = useState<string | null>(null);
   const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number }[]>([]);
   const [subtitleMode, setSubtitleMode] = useState(false);
   const [subtitleAlwaysShow, setSubtitleAlwaysShow] = useState(false);
@@ -282,6 +283,7 @@ export default function ReelsCutterPage() {
       setSubtitleMode(false);
       setSubtitleAlwaysShow(false);
       setCutDone(false);
+      setWaveformBg(null);
       origWidthCapturedRef.current = false;
       setProgress(0);
       setStatus("Ready");
@@ -331,10 +333,35 @@ export default function ReelsCutterPage() {
       await ffmpeg.writeFile('input.mov', await fetchFile(videoFile));
       await ffmpeg.exec(['-i', 'input.mov', '-vn', '-ar', '16000', '-ac', '1', 'whisper.mp3']);
       const audioData = await ffmpeg.readFile('whisper.mp3');
-      const audioBlob = new Blob([(audioData as any).buffer], { type: 'audio/mpeg' });
+      const audioRawBuffer = (audioData as any).buffer as ArrayBuffer;
+      const audioBlob = new Blob([audioRawBuffer], { type: 'audio/mpeg' });
       const form = new FormData();
       form.append('video', audioBlob, 'audio.mp3');
       const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
+
+      // Generate waveform in parallel with preview creation
+      (async () => {
+        try {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          const actx = new AudioCtx();
+          const decoded = await actx.decodeAudioData(audioRawBuffer.slice());
+          actx.close();
+          const ch = decoded.getChannelData(0);
+          const W = 1200, H = 56;
+          const wc = document.createElement('canvas');
+          wc.width = W; wc.height = H;
+          const wctx = wc.getContext('2d')!;
+          const spx = Math.max(1, Math.floor(ch.length / W));
+          wctx.fillStyle = '#D4AF37';
+          for (let i = 0; i < W; i++) {
+            let peak = 0;
+            for (let j = 0; j < spx; j++) peak = Math.max(peak, Math.abs(ch[i * spx + j] ?? 0));
+            const h = Math.max(1, peak * H * 0.85);
+            wctx.fillRect(i, (H - h) / 2, 1, h);
+          }
+          setWaveformBg(wc.toDataURL());
+        } catch { /* waveform is optional */ }
+      })();
       setStatus("Creating preview...");
       await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
       const previewData = await ffmpeg.readFile('preview.mp4');
@@ -650,6 +677,9 @@ export default function ReelsCutterPage() {
                             ))}
                           </div>
                           <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] border border-white/10 rounded-xl" style={{ width: `${zoom * 100}%`, minWidth: '100%', touchAction: zoom > 1 ? 'pan-x' : 'none' }}>
+                            {waveformBg && (
+                              <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden" style={{ backgroundImage: `url(${waveformBg})`, backgroundSize: '100% 100%', opacity: 0.2 }} />
+                            )}
                             {segments.map((seg, i) => (
                               <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
                                 onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; }}
