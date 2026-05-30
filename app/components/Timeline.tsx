@@ -102,6 +102,12 @@ export default function Timeline({
   const lastTapTimeRef = useRef<number>(0);
   const onWordDeleteRef = useRef(onWordDelete);
   useEffect(() => { onWordDeleteRef.current = onWordDelete; });
+  const onWordTimingChangeRef = useRef(onWordTimingChange);
+  useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
+  const chunksRef = useRef(chunks);
+  useEffect(() => { chunksRef.current = chunks; });
+  const safeDurationRef = useRef(safeDuration);
+  useEffect(() => { safeDurationRef.current = safeDuration; });
 
   const safeDuration = Math.max(1, Number.isFinite(duration) ? duration : 0);
   const totalWidth = Math.max(800, Math.ceil(safeDuration * PX_PER_SEC));
@@ -208,28 +214,40 @@ export default function Timeline({
 
     function onMove(e: PointerEvent) {
       if (!drag) return;
-      const words = chunks[drag.fw.chunkIndex].words;
+      const words = chunksRef.current[drag.fw.chunkIndex].words;
+      const dur = safeDurationRef.current;
       let patch: Partial<Word> = {};
       let tooltipTime = 0;
 
       if (drag.edge === 'left' || drag.edge === 'right') {
         const t = pointerXToTime(e);
-        const clamped = clampForEdge(t, drag.fw, drag.edge);
-        patch = drag.edge === 'left' ? { start: clamped } : { end: clamped };
+        // clamp inline using refs
+        const edge = drag.edge;
+        let clamped: number;
+        if (edge === 'left') {
+          const minT = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
+          const maxT = words[drag.fw.wordIndex].end - MIN_WORD_DURATION;
+          clamped = Math.max(minT, Math.min(maxT, t));
+        } else {
+          const minT = words[drag.fw.wordIndex].start + MIN_WORD_DURATION;
+          const maxT = drag.fw.wordIndex === words.length - 1 ? dur : words[drag.fw.wordIndex + 1].start;
+          clamped = Math.max(minT, Math.min(maxT, t));
+        }
+        patch = edge === 'left' ? { start: clamped } : { end: clamped };
         tooltipTime = clamped;
       } else {
         const t = pointerXToTime(e);
         const delta = t - (drag.t0 ?? 0);
         const wordDur = (drag.originalEnd ?? 0) - (drag.originalStart ?? 0);
         const minStart = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
-        const maxEnd = drag.fw.wordIndex === words.length - 1 ? safeDuration : words[drag.fw.wordIndex + 1].start;
+        const maxEnd = drag.fw.wordIndex === words.length - 1 ? dur : words[drag.fw.wordIndex + 1].start;
         let newStart = (drag.originalStart ?? 0) + delta;
         newStart = Math.max(minStart, Math.min(maxEnd - wordDur, newStart));
         patch = { start: newStart, end: newStart + wordDur };
         tooltipTime = newStart;
       }
 
-      onWordTimingChange(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
+      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
       const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }
@@ -276,7 +294,7 @@ export default function Timeline({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drag, chunks, safeDuration, onWordTimingChange]);
+  }, [drag]); // chunks/safeDuration/onWordTimingChange accessed via refs — no re-attach on every render
 
   function syncScrollThumb() {
     const c = containerRef.current;
