@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
+import Timeline from './components/Timeline';
 
 function LabelFooter() {
   return (
@@ -688,21 +689,33 @@ export default function ReelsCutterPage() {
                           <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
                         </div>
 
-                        {/* Word cards — auto-scrolls to active word */}
-                        <div ref={wordCardsRef} className="w-full h-24 bg-white/[0.02] border border-white/[0.05] rounded-xl p-2 flex gap-1.5 items-center overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth' } as React.CSSProperties}>
-                          {subtitleWords.map((w, i) => {
-                            const isCut = !segments.some(s => w.start < (s.end ?? duration) && w.end > s.start);
-                            const rs = remapToExportTime(w.start, segments, duration);
-                            const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
-                            const isActive = remappedCurrentTime >= rs && remappedCurrentTime <= re;
-                            return (
-                              <div key={i} className={`h-full min-w-[46px] border rounded-xl flex flex-col items-center justify-center p-1 relative flex-shrink-0 transition-all ${isActive ? 'bg-[#D4AF37]/20 border-[#D4AF37]/60' : isCut ? 'bg-white/[0.01] border-white/[0.04] opacity-35' : 'bg-white/[0.02] border-white/[0.06]'}`}>
-                                <input value={w.word} onChange={(e) => { const updated = [...subtitleWords]; updated[i] = { ...updated[i], word: e.target.value }; setSubtitleWords(updated); }} className="bg-transparent border-none outline-none text-[8px] text-white font-bold text-center w-full" />
-                                <button onClick={() => setSubtitleWords(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500/40 rounded-full text-[6px] flex items-center justify-center hover:bg-red-500/70 transition-colors">×</button>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        {/* Timeline — replaces old word cards */}
+                        <Timeline
+                          chunks={[{ start: 0, end: duration, words: subtitleWords }]}
+                          duration={duration}
+                          getCurrentTime={() => getAV()?.currentTime ?? 0}
+                          isPlaying={() => !paused}
+                          onWordTimingChange={(_, wordIndex, patch) => {
+                            setSubtitleWords(prev => prev.map((w, i) => i === wordIndex ? { ...w, ...patch } : w));
+                          }}
+                          onWordTextChange={(_, wordIndex, text) => {
+                            setSubtitleWords(prev => prev.map((w, i) => i === wordIndex ? { ...w, word: text } : w));
+                          }}
+                          onWordDelete={(_, wordIndex) => {
+                            setSubtitleWords(prev => prev.filter((_, i) => i !== wordIndex));
+                          }}
+                          onSeek={(t) => {
+                            const av = getAV();
+                            if (!av) return;
+                            av.currentTime = t;
+                            if (!av.paused) startLoop();
+                          }}
+                          onDragStart={() => {
+                            getAV()?.pause();
+                            stopLoop();
+                            setPaused(true);
+                          }}
+                        />
 
                         {/* Bottom row: ← back | size | pos | ✓ show in cut */}
                         <div className="flex items-center justify-between px-0.5 gap-2">
