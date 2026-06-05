@@ -12,7 +12,7 @@ export function ToolHeader() {
 
   return (
     <>
-      <header className="relative z-30 flex items-center justify-between px-6 py-4">
+      <header dir="ltr" className="relative z-30 flex items-center justify-between px-6 py-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/deVee Sign Transperent-1.png"
@@ -51,6 +51,9 @@ export function ToolHeader() {
           >
             Home
           </a>
+          <span className="text-2xl font-bold text-white/30 tracking-wider cursor-default">
+            Info
+          </span>
         </nav>
       </div>
     </>
