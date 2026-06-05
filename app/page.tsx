@@ -493,7 +493,7 @@ const stopLoop = () => {
 
   if (!authorized) {
     return (
-      <div className="min-h-[100dvh] bg-[#050505] flex flex-col items-center text-center">
+      <div className="min-h-[100dvh] flex flex-col items-center text-center">
         <header className="space-y-2 pt-8 pb-6 relative">
           <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
           <Image src="/logo.png" alt="Logo" width={100} height={32} className="mx-auto opacity-90 relative" />
@@ -525,7 +525,7 @@ const stopLoop = () => {
   const previewZoom = zoomPerCut && currentSegIdx >= 0 ? getSegmentZoom(currentSegIdx, zoomFreq) : 1.0;
 
   return (
-    <div className="min-h-[100dvh] bg-[#050505] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
+    <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
       <header className="text-center space-y-2 pt-8 pb-6 relative">
         <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
         <Image src="/logo.png" alt="Logo" width={80} height={26} className="opacity-90 mx-auto relative" />
