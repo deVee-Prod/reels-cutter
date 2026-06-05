@@ -100,3 +100,13 @@ button, .bg-\[\#D4AF37\] {
   background: #111;
 }
 .bg-drift-cell img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ── Tool Header ── */
+.header-menu-btn {
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  box-shadow: none !important;
+}
+.header-menu-btn:hover {
+  color: rgba(255, 255, 255, 1) !important;
+}

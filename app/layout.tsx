@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { DriftingGridBackground } from "./components/DriftingGridBackground";
+import { ToolHeader } from './components/ToolHeader';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +33,10 @@ export default function RootLayout({
     >
       <body className="relative min-h-full flex flex-col">
         <DriftingGridBackground />
-        <div className="relative z-10 flex flex-col min-h-full">{children}</div>
+        <div className="relative z-10 flex flex-col min-h-full">
+          <ToolHeader />
+          {children}
+        </div>
       </body>
     </html>
   );
