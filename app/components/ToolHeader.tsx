@@ -12,7 +12,7 @@ export function ToolHeader() {
 
   return (
     <>
-      <header dir="ltr" className="relative z-30 flex items-center justify-between px-6 py-4">
+      <header dir="ltr" className="absolute left-0 right-0 top-0 z-30 flex items-center justify-between px-6 py-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/deVee Sign Transperent-1.png"
