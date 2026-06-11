@@ -55,7 +55,6 @@ interface DragState {
   originalEnd?: number;
   startClientX: number;
   startClientY: number;
-  trackLeft: number;
 }
 
 interface TooltipState {
@@ -98,7 +97,6 @@ export default function Timeline({
   const scrollDragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [optimisticPatch, setOptimisticPatch] = useState<{ chunkIndex: number, wordIndex: number, patch: Partial<Word> } | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const editingInputRef = useRef<HTMLInputElement | null>(null);
@@ -169,10 +167,10 @@ export default function Timeline({
     return () => cancelAnimationFrame(rafRef.current);
   }, [getCurrentTime, isPlaying]);
 
-  function pointerXToTime(e: PointerEvent, cachedTrackLeft?: number): number {
+  function pointerXToTime(e: PointerEvent): number {
     if (!trackRef.current) return 0;
-    const left = cachedTrackLeft !== undefined ? cachedTrackLeft : trackRef.current.getBoundingClientRect().left;
-    const x = e.clientX - left;
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
     return Math.max(0, x / PX_PER_SEC);
   }
 
@@ -205,8 +203,7 @@ export default function Timeline({
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
     e.stopPropagation();
-    const trackLeft = trackRef.current ? trackRef.current.getBoundingClientRect().left : 0;
-    setDrag({ fw, edge, startClientX: e.clientX, startClientY: e.clientY, trackLeft });
+    setDrag({ fw, edge, startClientX: e.clientX, startClientY: e.clientY });
   }
 
   function onBodyPointerDown(e: React.PointerEvent, fw: FlatWord) {
@@ -216,9 +213,8 @@ export default function Timeline({
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
     e.stopPropagation();
-    const trackLeft = trackRef.current ? trackRef.current.getBoundingClientRect().left : 0;
-    const t0 = pointerXToTime(e.nativeEvent, trackLeft);
-    setDrag({ fw, edge: 'body', t0, originalStart: fw.start, originalEnd: fw.end, startClientX: e.clientX, startClientY: e.clientY, trackLeft });
+    const t0 = pointerXToTime(e.nativeEvent);
+    setDrag({ fw, edge: 'body', t0, originalStart: fw.start, originalEnd: fw.end, startClientX: e.clientX, startClientY: e.clientY });
 
     // Start long-press timer for forceBreak toggle
     longPressFiredRef.current = false;
@@ -253,7 +249,7 @@ export default function Timeline({
       let tooltipTime = 0;
 
       if (drag.edge === 'left' || drag.edge === 'right') {
-        const t = pointerXToTime(e, drag.trackLeft);
+        const t = pointerXToTime(e);
         // clamp inline using refs
         const edge = drag.edge;
         let clamped: number;
@@ -269,7 +265,7 @@ export default function Timeline({
         patch = edge === 'left' ? { start: clamped } : { end: clamped };
         tooltipTime = clamped;
       } else {
-        const t = pointerXToTime(e, drag.trackLeft);
+        const t = pointerXToTime(e);
         const delta = t - (drag.t0 ?? 0);
         const wordDur = (drag.originalEnd ?? 0) - (drag.originalStart ?? 0);
         const minStart = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
@@ -280,10 +276,8 @@ export default function Timeline({
         tooltipTime = newStart;
       }
 
-      const patchToApply = { ...patch };
-      setOptimisticPatch({ chunkIndex: drag.fw.chunkIndex, wordIndex: drag.fw.wordIndex, patch: patchToApply });
-      
-      const refTime = drag.edge === 'right' ? (patchToApply.end ?? patchToApply.start ?? 0) : (patchToApply.start ?? 0);
+      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
+      const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }
 
@@ -330,13 +324,6 @@ export default function Timeline({
           selectedKeyRef.current = null;
         }
       }
-      
-      // Apply the final patch to parent state ONLY on pointer up
-      if (drag && optimisticPatch) {
-        onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, optimisticPatch.patch);
-      }
-      
-      setOptimisticPatch(null);
       setDrag(null);
       setTooltip(null);
     }
@@ -448,12 +435,9 @@ export default function Timeline({
           {/* Word blocks */}
           <div className="absolute inset-x-0" style={{ top: `${RULER_HEIGHT + 6}px`, height: `${TRACK_HEIGHT}px` }}>
             {flatWords.map((fw) => {
-              const patch = optimisticPatch?.chunkIndex === fw.chunkIndex && optimisticPatch?.wordIndex === fw.wordIndex ? optimisticPatch.patch : {};
-              const currentStart = patch.start ?? fw.start;
-              const currentEnd = patch.end ?? fw.end;
               const isActive = drag?.fw.chunkIndex === fw.chunkIndex && drag?.fw.wordIndex === fw.wordIndex;
-              const left = currentStart * PX_PER_SEC;
-              const width = Math.max(8, (currentEnd - currentStart) * PX_PER_SEC);
+              const left = fw.start * PX_PER_SEC;
+              const width = Math.max(8, (fw.end - fw.start) * PX_PER_SEC);
               const handleW = Math.min(16, Math.max(6, Math.floor(width / 3)));
               const isEditing = editingKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const isSelected = selectedKey === `${fw.chunkIndex}-${fw.wordIndex}`;
@@ -471,7 +455,7 @@ export default function Timeline({
                   onPointerDown={(e) => onBodyPointerDown(e, fw)}
                   className={cls}
                   style={{ left: `${left}px`, width: `${width}px`, cursor: isEditing ? 'text' : 'grab', touchAction: 'none' }}
-                  title={isEditing ? 'Edit word' : `${fw.word} · ${formatTimeFull(currentStart)} → ${formatTimeFull(currentEnd)}${fw.forceBreak ? ' ✂ force break' : ''}`}
+                  title={isEditing ? 'Edit word' : `${fw.word} · ${formatTimeFull(fw.start)} → ${formatTimeFull(fw.end)}${fw.forceBreak ? ' ✂ force break' : ''}`}
                 >
                   {!isEditing && (
                     <div onPointerDown={(e) => onEdgePointerDown(e, fw, 'left')} className="absolute left-0 top-0 h-full cursor-ew-resize bg-black/0 hover:bg-black/40" style={{ touchAction: 'none', width: `${handleW}px` }} />
