@@ -404,7 +404,7 @@ export default function Timeline({
       <div
         ref={containerRef}
         onScroll={onContainerScroll}
-        className="relative overflow-x-auto overflow-y-hidden rounded-md bg-[#0c0c0c]"
+        className="relative overflow-x-auto overflow-y-hidden rounded-md bg-[#0c0c0c] pt-4"
         style={{ touchAction: 'pan-y' }}
       >
         <div
