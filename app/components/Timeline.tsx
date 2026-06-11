@@ -515,12 +515,19 @@ export default function Timeline({
 
           {/* Playhead */}
           <div ref={playheadRef} className="pointer-events-none absolute top-0 z-20 h-full" style={{ willChange: 'transform' }}>
-            <div className="absolute left-0 top-0 h-full w-px bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+            <div className="absolute top-0 bottom-0 -left-[1px] w-[2px] bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+            {/* Draggable Handle */}
             <div
               onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); }}
-              onPointerMove={(e) => { if (!(e.buttons & 1)) return; if (onSeek) onSeek(Math.max(0, Math.min(safeDuration, pointerXToTime(e.nativeEvent)))); }}
-              className="absolute -left-3 top-0 h-6 w-6 -translate-y-2 rotate-45 bg-white cursor-ew-resize touch-none pointer-events-auto"
-            />
+              onPointerMove={(e) => {
+                if (!(e.buttons & 1)) return;
+                const t = Math.max(0, Math.min(safeDuration, pointerXToTime(e.nativeEvent)));
+                if (onSeek) onSeek(t);
+              }}
+              className="absolute -top-4 -left-8 w-16 h-14 flex items-start justify-center cursor-ew-resize touch-none pointer-events-auto"
+            >
+              <div className="w-6 h-6 rotate-45 bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] border border-white/30 mt-2 pointer-events-none" />
+            </div>
           </div>
 
           {tooltip && (
