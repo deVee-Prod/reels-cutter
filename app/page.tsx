@@ -114,6 +114,7 @@ export default function ReelsCutterPage() {
   const [wordsPerLine, setWordsPerLine] = useState(1);
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
+  const [canUndoCut, setCanUndoCut] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
@@ -147,6 +148,7 @@ export default function ReelsCutterPage() {
   const currentTimeRef = useRef(0);
   const lastDrawnTimeRef = useRef(-1);
   const historyRef = useRef<any[][]>([]);
+  const cutHistoryRef = useRef<any[][]>([]);
   const syncAndDrawRef = useRef<() => void>(() => {});
   const togglePlayRef = useRef<() => Promise<void>>(async () => {});
   const lastUIUpdateRef = useRef(0);
@@ -493,7 +495,9 @@ export default function ReelsCutterPage() {
       activeIsARef.current = true;
       setActiveIsA(true);
       historyRef.current = [];
+      cutHistoryRef.current = [];
       setCanUndo(false);
+      setCanUndoCut(false);
     }
   };
 
@@ -638,6 +642,8 @@ export default function ReelsCutterPage() {
       lastDrawnTimeRef.current = -1;
       historyRef.current = [];
       setCanUndo(false);
+      cutHistoryRef.current = [];
+      setCanUndoCut(false);
       setStatus("Edit Subtitles");
     } catch {
       setStatus("Error");
@@ -1125,7 +1131,24 @@ export default function ReelsCutterPage() {
                   <div className="w-full mb-6 space-y-2">
                     {/* ── CUTTER MODE ── */}
                     <div className="flex items-center justify-between px-0.5">
-                      <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
+                        {canUndoCut && (
+                          <button
+                            onClick={() => {
+                              const h = cutHistoryRef.current;
+                              if (h.length > 0) {
+                                const prev = h.pop();
+                                setSegments(prev ?? null);
+                                setCanUndoCut(h.length > 0);
+                              }
+                            }}
+                            className="ml-2 text-[9px] font-bold text-white/50 hover:text-white transition-colors tracking-widest uppercase flex items-center gap-1 active:scale-95"
+                          >
+                            ↩ Undo
+                          </button>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setZoom(z => Math.max(1, z / 2)); if (zoom <= 2 && timelineContainerRef.current) timelineContainerRef.current.scrollLeft = 0; }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">−</button>
                         <span className="text-white/30 text-[9px] w-5 text-center">{zoom}×</span>
@@ -1136,7 +1159,7 @@ export default function ReelsCutterPage() {
                     <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
                       <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
                         {segments.map((seg, i) => (
-                          <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
+                          <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
                         ))}
                       </div>
                       <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] border border-white/10 rounded-xl" style={{ width: `${zoom * 100}%`, minWidth: '100%', touchAction: zoom > 1 ? 'pan-x' : 'none' }}>
@@ -1145,7 +1168,7 @@ export default function ReelsCutterPage() {
                         )}
                         {segments.map((seg, i) => (
                           <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; }}
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } }}
                             onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) / rect.width * duration; const { edge } = draggingRef.current; setSegments(prev => prev ? prev.map((s, idx) => { if (idx !== i) return s; if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }; return { ...s, end: Math.max(t, s.start + 0.1) }; }) : prev); }}
                             onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); const dragIdx = draggingRef.current?.index ?? i; draggingRef.current = null; const seg = segmentsRef.current?.[dragIdx]; const av = getAV(); if (av && seg) av.currentTime = seg.start; if (av && !av.paused) startLoop(); }}
                           >
