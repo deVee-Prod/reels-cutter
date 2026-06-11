@@ -16,9 +16,9 @@ const FONTS = [
 ] as const;
 type FontId = typeof FONTS[number]['id'];
 
-// Canvas preview scale — cheaper on mobile
-const PREVIEW_SCALE_DESKTOP = 0.3;
-const PREVIEW_SCALE_MOBILE  = 0.2;
+// Canvas preview scale — higher to counteract 360p base video and render crisp text
+const PREVIEW_SCALE_DESKTOP = 3.0; // 360p * 3 = 1080p canvas
+const PREVIEW_SCALE_MOBILE  = 2.0; // 360p * 2 = 720p canvas
 
 // Gap threshold — if silence between two words >= this, force a group break
 const GAP_BREAK_THRESHOLD = 0.5;
