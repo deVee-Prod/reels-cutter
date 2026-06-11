@@ -1133,21 +1133,20 @@ export default function ReelsCutterPage() {
                     <div className="flex items-center justify-between px-0.5">
                       <div className="flex items-center gap-2">
                         <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
-                        {canUndoCut && (
-                          <button
-                            onClick={() => {
-                              const h = cutHistoryRef.current;
-                              if (h.length > 0) {
-                                const prev = h.pop();
-                                setSegments(prev ?? null);
-                                setCanUndoCut(h.length > 0);
-                              }
-                            }}
-                            className="ml-2 text-[9px] font-bold text-white/50 hover:text-white transition-colors tracking-widest uppercase flex items-center gap-1 active:scale-95"
-                          >
-                            ↩ Undo
-                          </button>
-                        )}
+                        <button
+                          disabled={!canUndoCut}
+                          onClick={() => {
+                            const h = cutHistoryRef.current;
+                            if (h.length > 0) {
+                              const prev = h.pop();
+                              setSegments(prev ?? null);
+                              setCanUndoCut(h.length > 0);
+                            }
+                          }}
+                          className={`ml-2 text-[9px] font-bold tracking-widest uppercase flex items-center gap-1 transition-colors ${canUndoCut ? 'text-white/50 hover:text-white active:scale-95' : 'text-white/10 pointer-events-none'}`}
+                        >
+                          ↩ Undo
+                        </button>
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setZoom(z => Math.max(1, z / 2)); if (zoom <= 2 && timelineContainerRef.current) timelineContainerRef.current.scrollLeft = 0; }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">−</button>
