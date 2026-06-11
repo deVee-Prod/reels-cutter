@@ -55,6 +55,7 @@ interface DragState {
   originalEnd?: number;
   startClientX: number;
   startClientY: number;
+  trackLeft: number;
 }
 
 interface TooltipState {
@@ -168,10 +169,10 @@ export default function Timeline({
     return () => cancelAnimationFrame(rafRef.current);
   }, [getCurrentTime, isPlaying]);
 
-  function pointerXToTime(e: PointerEvent): number {
+  function pointerXToTime(e: PointerEvent, cachedTrackLeft?: number): number {
     if (!trackRef.current) return 0;
-    const rect = trackRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const left = cachedTrackLeft !== undefined ? cachedTrackLeft : trackRef.current.getBoundingClientRect().left;
+    const x = e.clientX - left;
     return Math.max(0, x / PX_PER_SEC);
   }
 
@@ -204,7 +205,8 @@ export default function Timeline({
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
     e.stopPropagation();
-    setDrag({ fw, edge, startClientX: e.clientX, startClientY: e.clientY });
+    const trackLeft = trackRef.current ? trackRef.current.getBoundingClientRect().left : 0;
+    setDrag({ fw, edge, startClientX: e.clientX, startClientY: e.clientY, trackLeft });
   }
 
   function onBodyPointerDown(e: React.PointerEvent, fw: FlatWord) {
@@ -214,8 +216,9 @@ export default function Timeline({
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
     e.stopPropagation();
-    const t0 = pointerXToTime(e.nativeEvent);
-    setDrag({ fw, edge: 'body', t0, originalStart: fw.start, originalEnd: fw.end, startClientX: e.clientX, startClientY: e.clientY });
+    const trackLeft = trackRef.current ? trackRef.current.getBoundingClientRect().left : 0;
+    const t0 = pointerXToTime(e.nativeEvent, trackLeft);
+    setDrag({ fw, edge: 'body', t0, originalStart: fw.start, originalEnd: fw.end, startClientX: e.clientX, startClientY: e.clientY, trackLeft });
 
     // Start long-press timer for forceBreak toggle
     longPressFiredRef.current = false;
@@ -250,7 +253,7 @@ export default function Timeline({
       let tooltipTime = 0;
 
       if (drag.edge === 'left' || drag.edge === 'right') {
-        const t = pointerXToTime(e);
+        const t = pointerXToTime(e, drag.trackLeft);
         // clamp inline using refs
         const edge = drag.edge;
         let clamped: number;
@@ -266,7 +269,7 @@ export default function Timeline({
         patch = edge === 'left' ? { start: clamped } : { end: clamped };
         tooltipTime = clamped;
       } else {
-        const t = pointerXToTime(e);
+        const t = pointerXToTime(e, drag.trackLeft);
         const delta = t - (drag.t0 ?? 0);
         const wordDur = (drag.originalEnd ?? 0) - (drag.originalStart ?? 0);
         const minStart = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
@@ -279,7 +282,7 @@ export default function Timeline({
 
       const patchToApply = { ...patch };
       setOptimisticPatch({ chunkIndex: drag.fw.chunkIndex, wordIndex: drag.fw.wordIndex, patch: patchToApply });
-      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patchToApply);
+      
       const refTime = drag.edge === 'right' ? (patchToApply.end ?? patchToApply.start ?? 0) : (patchToApply.start ?? 0);
       setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
     }
@@ -327,6 +330,12 @@ export default function Timeline({
           selectedKeyRef.current = null;
         }
       }
+      
+      // Apply the final patch to parent state ONLY on pointer up
+      if (drag && optimisticPatch) {
+        onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, optimisticPatch.patch);
+      }
+      
       setOptimisticPatch(null);
       setDrag(null);
       setTooltip(null);
