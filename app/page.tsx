@@ -941,9 +941,9 @@ export default function ReelsCutterPage() {
                   <button
                     onClick={handleUndo}
                     disabled={!canUndo}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all active:scale-95 ${canUndo ? 'bg-white/5 text-white/60 hover:bg-white/10' : 'text-white/15 cursor-default'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all ${canUndo ? 'bg-[#D4AF37] text-black active:scale-95 hover:bg-[#E5BE48]' : 'bg-white/5 text-white/20 pointer-events-none'}`}
                   >
-                    ↩ Undo
+                    <span className="text-[11px]">↩️</span> UNDO
                   </button>
                 </div>
                 <Timeline
@@ -1143,9 +1143,9 @@ export default function ReelsCutterPage() {
                               setCanUndoCut(h.length > 0);
                             }
                           }}
-                          className={`ml-2 text-[9px] font-bold tracking-widest uppercase flex items-center gap-1 transition-colors ${canUndoCut ? 'text-white/50 hover:text-white active:scale-95' : 'text-white/10 pointer-events-none'}`}
+                          className={`px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase flex items-center gap-1.5 transition-colors ${canUndoCut ? 'bg-[#D4AF37] text-black active:scale-95 hover:bg-[#E5BE48]' : 'bg-white/5 text-white/20 pointer-events-none'}`}
                         >
-                          ↩ Undo
+                          <span className="text-[11px]">↩️</span> UNDO
                         </button>
                       </div>
                       <div className="flex items-center gap-2">
