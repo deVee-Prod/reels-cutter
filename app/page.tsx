@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Timeline from './components/Timeline';
 
@@ -15,6 +15,34 @@ const FONTS = [
   { id: 'FrankRuhlLibreBold',   label: 'Frank Ruhl',    file: '/FrankRuhlLibre-Bold.ttf'        },
 ] as const;
 type FontId = typeof FONTS[number]['id'];
+
+// Canvas preview scale — cheaper on mobile
+const PREVIEW_SCALE_DESKTOP = 0.3;
+const PREVIEW_SCALE_MOBILE  = 0.2;
+
+// Gap threshold — if silence between two words >= this, force a group break
+const GAP_BREAK_THRESHOLD = 0.5;
+
+/** Group words into lines of *up to* `maxPerLine` words.
+ *  A new group starts whenever:
+ *  1. The current group already has `maxPerLine` words, OR
+ *  2. The gap between the previous word's end and the next word's start >= GAP_BREAK_THRESHOLD
+ *  3. The word has forceBreak flag */
+function buildWordGroups<T extends { start: number; end: number; forceBreak?: boolean }>(words: T[], maxPerLine: number): T[][] {
+  if (words.length === 0) return [];
+  const groups: T[][] = [[words[0]]];
+  for (let i = 1; i < words.length; i++) {
+    const current = groups[groups.length - 1];
+    const prev = words[i - 1];
+    const gap = words[i].start - prev.end;
+    if (current.length >= maxPerLine || gap >= GAP_BREAK_THRESHOLD || words[i].forceBreak) {
+      groups.push([words[i]]);
+    } else {
+      current.push(words[i]);
+    }
+  }
+  return groups;
+}
 
 function LabelFooter() {
   return (
@@ -49,11 +77,14 @@ function getSegmentZoom(idx: number, freq: number): number {
 }
 
 export default function ReelsCutterPage() {
+  // ── Auth ──
   const [authStatus, setAuthStatus] = useState<'checking' | 'ok' | 'no_access'>('checking');
   const [authorized, setAuthorized] = useState(false);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // ── Core ──
   const [loaded, setLoaded] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -64,30 +95,35 @@ export default function ReelsCutterPage() {
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [paused, setPaused] = useState(true);
+
+  // ── Phase 1: Cut Mode ──
   const [zoom, setZoom] = useState(4);
   const [waveformBg, setWaveformBg] = useState<string | null>(null);
-  const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
-  const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
-  const fontFamilyRef = useRef<FontId>('NotoSansTight');
-  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number }[]>([]);
-  const [subtitleMode, setSubtitleMode] = useState(false);
-  const [subtitleAlwaysShow, setSubtitleAlwaysShow] = useState(false);
-  const [subtitlePos, setSubtitlePos] = useState(25);
-  const [fontScale, setFontScale] = useState(1);
   const [zoomPerCut, setZoomPerCut] = useState(false);
   const [zoomMode, setZoomMode] = useState(false);
   const [zoomFreq, setZoomFreq] = useState<1 | 4>(1);
   const [activeIsA, setActiveIsA] = useState(true);
-  const [cutDone, setCutDone] = useState(false);
 
+  // ── Phase 2: Subtitle Editor (ported from Dubber) ──
+  const [cutDone, setCutDone] = useState(false);
+  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number; forceBreak?: boolean }[]>([]);
+  const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
+  const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
+  const [subtitlePos, setSubtitlePos] = useState(30);
+  const [fontScale, setFontScale] = useState(1);
+  const [wordsPerLine, setWordsPerLine] = useState(1);
+  const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+
+  // ── Refs ──
   const ffmpegRef = useRef<any>(null);
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
   const activeIsARef = useRef(true);
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
-  const wordCardsRef = useRef<HTMLDivElement>(null);
-  const lastActiveWordIdxRef = useRef(-1);
   const draggingRef = useRef<{ index: number; edge: 'start' | 'end' } | null>(null);
   const rafRef = useRef<number | null>(null);
   const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
@@ -102,6 +138,45 @@ export default function ReelsCutterPage() {
   const origVideoWidthRef = useRef(0);
   const origWidthCapturedRef = useRef(false);
 
+  // Phase 2 refs (ported from Dubber)
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const phase2VideoRef = useRef<HTMLVideoElement>(null);
+  const subtitlePosRef = useRef(30);
+  const fontFamilyRef = useRef<FontId>('NotoSansTight');
+  const wordsPerLineRef = useRef(1);
+  const currentTimeRef = useRef(0);
+  const lastDrawnTimeRef = useRef(-1);
+  const historyRef = useRef<any[][]>([]);
+  const syncAndDrawRef = useRef<() => void>(() => {});
+  const togglePlayRef = useRef<() => Promise<void>>(async () => {});
+  const lastUIUpdateRef = useRef(0);
+  const lastDrawTimeMsRef = useRef(0);
+  const previewScaleRef = useRef(
+    typeof window !== 'undefined' && window.innerWidth < 768
+      ? PREVIEW_SCALE_MOBILE
+      : PREVIEW_SCALE_DESKTOP
+  );
+
+  // Stable Timeline callbacks
+  const getTimeCallback = useCallback(() => currentTimeRef.current, []);
+  const isPlayingCallback = useCallback(() => !!(phase2VideoRef.current && !phase2VideoRef.current.paused), []);
+
+  // ── Undo system ──
+  function pushHistory(snapshot: any[]) {
+    historyRef.current = [...historyRef.current.slice(-29), [...snapshot]];
+    setCanUndo(true);
+  }
+
+  const handleUndo = useCallback(() => {
+    const h = historyRef.current;
+    if (h.length === 0) return;
+    const prev = h[h.length - 1];
+    historyRef.current = h.slice(0, -1);
+    setSubtitleWords(prev);
+    setCanUndo(h.length > 1);
+  }, []);
+
+  // ── Auth checks ──
   useEffect(() => {
     if (document.cookie.split(';').some(c => c.trim() === 'devee_auth=1')) {
       setAuthStatus('ok');
@@ -117,49 +192,42 @@ export default function ReelsCutterPage() {
     }
   }, []);
 
+  // ── Sync refs ──
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   useEffect(() => { durationRef.current = duration; }, [duration]);
   useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
   useEffect(() => { fontFamilyRef.current = fontFamily; }, [fontFamily]);
+  useEffect(() => { subtitlePosRef.current = subtitlePos; }, [subtitlePos]);
+  useEffect(() => { wordsPerLineRef.current = wordsPerLine; }, [wordsPerLine]);
+
+  // ── Load fonts ──
   useEffect(() => {
     FONTS.forEach(({ id, file }) => {
       const font = new FontFace(id, `url(${file})`);
       font.load().then(f => { document.fonts.add(f); setLoadedFonts(prev => new Set([...prev, id])); }).catch(() => {});
     });
   }, []);
+
+  // ── Cleanup RAF ──
   useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
   useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
+  // ── Phase 1: Timeline auto-scroll ──
   useEffect(() => {
+    if (cutDone) return; // Don't auto-scroll in Phase 2
     const c = timelineContainerRef.current;
     if (!c || zoom <= 1 || !duration) return;
     const cw = c.clientWidth;
     const ph = (currentTime / duration) * cw * zoom;
     if (ph < c.scrollLeft + 40 || ph > c.scrollLeft + cw - 40)
       c.scrollLeft = Math.max(0, ph - cw * 0.25);
-  }, [currentTime, zoom, duration]);
+  }, [currentTime, zoom, duration, cutDone]);
 
-  // auto-scroll word cards to follow active word
-  useEffect(() => {
-    const container = wordCardsRef.current;
-    if (!container || !segments || !subtitleMode) return;
-    const rct = remapToExportTime(currentTime, segments, duration);
-    const activeIdx = subtitleWords.findIndex(w => {
-      const rs = remapToExportTime(w.start, segments, duration);
-      const re = Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
-      return rct >= rs && rct <= re;
-    });
-    if (activeIdx < 0 || activeIdx === lastActiveWordIdxRef.current) return;
-    lastActiveWordIdxRef.current = activeIdx;
-    const card = container.children[activeIdx] as HTMLElement;
-    if (!card) return;
-    container.scrollLeft = Math.max(0, card.offsetLeft - container.clientWidth / 2 + card.offsetWidth / 2);
-  }, [currentTime, segments, duration, subtitleMode]);
-
+  // ── Phase 1: Video playback helpers ──
   const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
   const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
 
-const stopLoop = () => {
+  const stopLoop = () => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -220,6 +288,170 @@ const stopLoop = () => {
     if (av) setCurrentTime(av.currentTime);
   };
 
+  // ── Phase 2: Canvas syncAndDraw (ported from Dubber) ──
+  const syncAndDraw = () => {
+    const media = phase2VideoRef.current;
+    const canvas = canvasRef.current;
+
+    if (media && canvas) {
+      const ctx = canvas.getContext('2d');
+      const isActive = !media.paused && !media.ended;
+
+      if (isActive) {
+        currentTimeRef.current = media.currentTime;
+        const now = performance.now();
+        if (now - lastUIUpdateRef.current > 66) {
+          setCurrentTime(media.currentTime);
+          lastUIUpdateRef.current = now;
+        }
+      }
+
+      const timeChanged = currentTimeRef.current !== lastDrawnTimeRef.current;
+      const now = performance.now();
+      const shouldDraw = isActive ? (now - lastDrawTimeMsRef.current > 33) : timeChanged;
+
+      if (ctx && media.videoWidth > 0 && shouldDraw) {
+        if (isActive) lastDrawTimeMsRef.current = now;
+        const scale = previewScaleRef.current;
+        const targetW = Math.round(media.videoWidth * scale);
+        if (canvas.width !== targetW) {
+          canvas.width = targetW;
+          canvas.height = Math.round(media.videoHeight * scale);
+        }
+        ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
+        lastDrawnTimeRef.current = currentTimeRef.current;
+
+        // Draw subtitle on canvas
+        if (canvas.width > 0 && subtitleWords.length > 0) {
+          const time = currentTimeRef.current;
+          const wpl = wordsPerLineRef.current;
+          const wordGroups = buildWordGroups(subtitleWords, wpl);
+
+          let activeGroup: typeof subtitleWords | null = null;
+          let groupStartIndex = -1;
+          let flatIdx = 0;
+          for (const group of wordGroups) {
+            const groupStart = group[0].start;
+            const groupEnd = group[group.length - 1].end;
+            if (time >= groupStart && time <= groupEnd) {
+              activeGroup = group;
+              groupStartIndex = flatIdx;
+              break;
+            }
+            flatIdx += group.length;
+          }
+
+          if (activeGroup) {
+            const lineText = activeGroup.map((w: any) => w.word).join(' ');
+            const baseSize = [28, 42, 58][groupStartIndex % 3] * fontScale;
+            const fontSize = Math.round(baseSize * (canvas.height / 500));
+            const x = canvas.width / 2;
+            const y = canvas.height - (canvas.height * subtitlePosRef.current / 100);
+            const borderW = Math.max(2, Math.round(2.4 * (canvas.height / 500)));
+
+            ctx.save();
+            ctx.font = `900 ${fontSize}px "${fontFamilyRef.current}", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+
+            ctx.shadowColor = 'transparent';
+            ctx.lineWidth = borderW;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+            ctx.strokeText(lineText, x, y);
+
+            ctx.shadowColor = 'rgba(0,0,0,0.95)';
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = Math.round(2 * (canvas.height / 500));
+            ctx.shadowBlur = 4;
+            ctx.fillStyle = '#ECE9E4';
+            ctx.fillText(lineText, x, y);
+            ctx.restore();
+          }
+        }
+      }
+    }
+  };
+
+  // Keep syncAndDraw ref current
+  useEffect(() => { syncAndDrawRef.current = syncAndDraw; });
+
+  // Phase 2 RAF loop — runs only when cutDone
+  useEffect(() => {
+    if (!cutDone) return;
+    function loop() {
+      syncAndDrawRef.current();
+      phase2RafRef.current = requestAnimationFrame(loop);
+    }
+    const phase2RafRef = { current: requestAnimationFrame(loop) };
+    return () => { cancelAnimationFrame(phase2RafRef.current); };
+  }, [cutDone]);
+
+  // Phase 2 toggle play
+  const togglePlay = async () => {
+    const media = phase2VideoRef.current;
+    if (!media) return;
+    if (media.paused) {
+      try { await media.play(); setPaused(false); } catch (err) { console.error("Playback failed", err); }
+    } else {
+      media.pause();
+      setPaused(true);
+    }
+  };
+
+  useEffect(() => { togglePlayRef.current = togglePlay; });
+
+  // Spacebar for play/pause in Phase 2 + Cmd+Z for undo
+  useEffect(() => {
+    if (!cutDone) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (e.key !== ' ') return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      e.preventDefault();
+      togglePlayRef.current();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [cutDone, handleUndo]);
+
+  // Phase 2: seek handler
+  const handlePhase2Seek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentTime(newTime);
+    currentTimeRef.current = newTime;
+    lastDrawnTimeRef.current = -1;
+    if (phase2VideoRef.current) phase2VideoRef.current.currentTime = newTime;
+  };
+
+  // Phase 2: drag subtitle position
+  const startDragging = (e: any) => {
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const startY = clientY;
+    const startPos = subtitlePos;
+    const onMove = (moveEvent: any) => {
+      const currentY = moveEvent.touches ? moveEvent.touches[0].clientY : moveEvent.clientY;
+      const delta = ((startY - currentY) / (canvasRef.current?.clientHeight || 500)) * 100;
+      setSubtitlePos(Math.min(90, Math.max(10, startPos + delta)));
+    };
+    const onEnd = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+  };
+
+  // ── FFmpeg ──
   const loadFFmpeg = async () => {
     if (ffmpegRef.current) return;
     const { FFmpeg } = await import('@ffmpeg/ffmpeg');
@@ -227,7 +459,10 @@ const stopLoop = () => {
     const ffmpeg = new FFmpeg();
     ffmpegRef.current = ffmpeg;
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-    ffmpeg.on('progress', ({ progress }) => setProgress(Math.round(progress * 100)));
+    ffmpeg.on('progress', ({ progress }: { progress: number }) => {
+      setProgress(Math.round(progress * 100));
+      setExportProgress(Math.round(progress * 100));
+    });
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -250,8 +485,6 @@ const stopLoop = () => {
       setVideoUrl(URL.createObjectURL(file));
       setSegments(null);
       setSubtitleWords([]);
-      setSubtitleMode(false);
-      setSubtitleAlwaysShow(false);
       setCutDone(false);
       setWaveformBg(null);
       origWidthCapturedRef.current = false;
@@ -259,6 +492,8 @@ const stopLoop = () => {
       setStatus("Ready");
       activeIsARef.current = true;
       setActiveIsA(true);
+      historyRef.current = [];
+      setCanUndo(false);
     }
   };
 
@@ -292,6 +527,7 @@ const stopLoop = () => {
     video.currentTime = segs[0].start;
   };
 
+  // ── Phase 1: Analyze video ──
   const analyzeVideo = async () => {
     if (!videoFile || !loaded) return;
     setProcessing(true);
@@ -309,7 +545,7 @@ const stopLoop = () => {
       form.append('video', audioBlob, 'audio.mp3');
       const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
 
-      // Generate waveform in parallel with preview creation
+      // Generate waveform in parallel
       (async () => {
         try {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -354,6 +590,7 @@ const stopLoop = () => {
     }
   };
 
+  // ── Transition: Phase 1 → Phase 2 ──
   const finishCutting = async () => {
     if (!segments || !ffmpegRef.current) return;
     setProcessing(true);
@@ -396,7 +633,11 @@ const stopLoop = () => {
       setVideoUrl(cutUrl);
       setSubtitleWords(remapped);
       setCutDone(true);
-      setSubtitleMode(true);
+      setPaused(true);
+      currentTimeRef.current = 0;
+      lastDrawnTimeRef.current = -1;
+      historyRef.current = [];
+      setCanUndo(false);
       setStatus("Edit Subtitles");
     } catch {
       setStatus("Error");
@@ -405,27 +646,44 @@ const stopLoop = () => {
     }
   };
 
+  // ── Go back from Phase 2 to Phase 1 ──
+  const goBackToCutMode = () => {
+    // Pause Phase 2 video
+    phase2VideoRef.current?.pause();
+    setPaused(true);
+    // Restore originals
+    if (origVideoUrlRef.current) setVideoUrl(origVideoUrlRef.current);
+    setSubtitleWords(origSubtitleWordsRef.current);
+    setCutDone(false);
+    setStatus("Review Edit");
+    historyRef.current = [];
+    setCanUndo(false);
+  };
+
+  // ── Phase 2: Export (with grouped subtitles) ──
   const renderVideo = async () => {
     if (!videoFile || !segments) return;
-    setProcessing(true);
-    setProgress(0);
+    setIsExporting(true);
+    setExportProgress(0);
     setStatus("Rendering 1080p Master...");
     try {
       const { fetchFile } = await import('@ffmpeg/util');
       await ffmpegRef.current.writeFile('input.mov', await fetchFile(videoFile));
 
-      const withSubtitles = (subtitleMode || subtitleAlwaysShow) && subtitleWords.length > 0;
+      const withSubtitles = subtitleWords.length > 0;
 
       if (withSubtitles) {
         setStatus("Loading font...");
         const selectedFont = FONTS.find(f => f.id === fontFamily) ?? FONTS[0];
         const fontRes = await fetch(selectedFont.file);
-        if (!fontRes.ok) throw new Error('NotoSansTight.ttf not found in /public');
+        if (!fontRes.ok) throw new Error('Font not found in /public');
         await ffmpegRef.current.writeFile('myfont.ttf', new Uint8Array(await fontRes.arrayBuffer()));
         setStatus("Rendering 1080p Master...");
       }
 
       const exportScale = (origVideoWidthRef.current || 1080) / 200;
+      const videoH = origVideoWidthRef.current ? (origVideoWidthRef.current * 16 / 9) : 1920;
+      const scaleRatio = videoH / 500;
 
       let f = '', c = '';
       segments.forEach((s, i) => {
@@ -438,8 +696,11 @@ const stopLoop = () => {
 
       let drawtextChain = '';
       if (withSubtitles) {
-        const dtFilters = subtitleWords.map((w, i) => {
-          const safeWord = w.word.trim()
+        // Use grouped words (Dubber-style) for export
+        const groups = buildWordGroups(subtitleWords, wordsPerLine);
+        const dtFilters = groups.map((group, groupIndex) => {
+          const lineText = group.map((w: any) => w.word).join(' ');
+          let safeWord = lineText.trim()
             .toUpperCase()
             .replace(/'/g, '')
             .replace(/:/g, '\\:')
@@ -447,9 +708,20 @@ const stopLoop = () => {
             .replace(/\[/g, '\\[')
             .replace(/\]/g, '\\]');
           if (!safeWord) return null;
-          const fontSize = Math.round([14, 20, 28][i % 3] * exportScale * fontScale);
-          const rs = cutDone ? w.start : remapToExportTime(w.start, segments, duration);
-          const re = cutDone ? Math.max(w.start + 0.08, w.end) : Math.max(rs + 0.08, remapToExportTime(w.end, segments, duration));
+
+          const baseSize = [28, 42, 58][groupIndex % 3] * fontScale;
+          const fontSize = Math.round(baseSize * scaleRatio);
+
+          const rs = cutDone ? group[0].start : remapToExportTime(group[0].start, segments, duration);
+          let re = cutDone ? Math.max(group[0].start + 0.08, group[group.length - 1].end) : Math.max(rs + 0.08, remapToExportTime(group[group.length - 1].end, segments, duration));
+
+          // Prevent overlap with next group
+          const nextGroup = groups[groupIndex + 1];
+          if (nextGroup) {
+            const nextStart = cutDone ? nextGroup[0].start : remapToExportTime(nextGroup[0].start, segments, duration);
+            if (re > nextStart) re = Math.max(rs + 0.05, nextStart - 0.01);
+          }
+
           const yPos = `h-(h*${subtitlePos}/100)-text_h`;
           return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xECE9E4:bordercolor=black@0.9:borderw=2:shadowx=0:shadowy=2:shadowcolor=black@0.95`;
         }).filter(Boolean);
@@ -463,8 +735,21 @@ const stopLoop = () => {
 
       const url = URL.createObjectURL(new Blob([(await ffmpegRef.current.readFile('out.mp4') as any).buffer], { type: 'video/mp4' }));
       const a = document.createElement('a'); a.href = url; a.download = `deVee_${videoFile.name}.mp4`; a.click();
-    } catch (e) { setStatus("Error"); } finally { setProcessing(false); }
+      setStatus("Done!");
+    } catch (e) { setStatus("Error"); } finally { setIsExporting(false); setExportProgress(0); }
   };
+
+  // ── Format time ──
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "00:00";
+    const m = Math.floor(time / 60).toString().padStart(2, '0');
+    const s = Math.floor(time % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // ═══════════════════════════════════════════════════════
+  // ██  R E N D E R
+  // ═══════════════════════════════════════════════════════
 
   if (authStatus === 'checking') {
     return (
@@ -518,12 +803,241 @@ const stopLoop = () => {
     );
   }
 
-  const remappedCurrentTime = cutDone ? currentTime : (segments ? remapToExportTime(currentTime, segments, duration) : currentTime);
-  const showSubtitleOverlay = (subtitleMode || subtitleAlwaysShow) && subtitleWords.length > 0 && !!segments;
-
+  // ── Phase 1 derived values ──
   const currentSegIdx = segments ? segments.findIndex(s => currentTime >= s.start && currentTime <= (s.end ?? duration)) : -1;
   const previewZoom = zoomPerCut && currentSegIdx >= 0 ? getSegmentZoom(currentSegIdx, zoomFreq) : 1.0;
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  PHASE 2: SUBTITLE EDITOR (Dubber-style canvas UI)
+  // ═══════════════════════════════════════════════════════════════════
+  if (cutDone && videoUrl) {
+    return (
+      <div className="min-h-[100dvh] w-full text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
+        <header className="w-full text-center space-y-2 pt-8 pb-6 relative z-10">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
+          <Image src="/logo.png" alt="deVee" width={80} height={26} className="opacity-80 mx-auto relative" />
+          <p className="text-[9px] tracking-[0.3em] text-white/70 font-bold uppercase">REELS CUTTER — SUBTITLES</p>
+        </header>
+
+        <main className="w-full max-w-2xl mx-auto flex flex-col items-center flex-1 px-4 md:px-6 space-y-3 md:space-y-5 py-4 md:py-6">
+          <div className="w-full space-y-3 md:space-y-5">
+            {/* Canvas preview */}
+            <div className="relative w-full h-[48vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
+              <div className="relative w-full h-full cursor-pointer" onClick={togglePlay}>
+                <video
+                  ref={phase2VideoRef}
+                  src={videoUrl}
+                  preload="auto"
+                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+                  playsInline
+                  onLoadedData={() => { lastDrawnTimeRef.current = -1; }}
+                  onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                />
+                <canvas ref={canvasRef} className="w-full h-full object-contain" />
+
+                {isExporting && (
+                  <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+                    <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden mb-4">
+                      <div className="h-full bg-[#D4AF37] transition-all duration-300" style={{ width: `${exportProgress}%` }}></div>
+                    </div>
+                    <p className="text-[10px] font-black tracking-[0.5em] text-white uppercase animate-pulse">Burning {exportProgress}%</p>
+                  </div>
+                )}
+
+                {paused && !isExporting && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <div className="w-16 h-16 md:w-20 md:h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-2xl">
+                      <div className="w-0 h-0 border-t-[10px] border-t-transparent border-l-[18px] border-l-white border-b-[10px] border-b-transparent ml-2" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Drag handle for subtitle position */}
+                <div
+                  className="absolute left-0 right-0 flex justify-center px-6 text-center select-none z-30 cursor-ns-resize active:cursor-grabbing"
+                  style={{ bottom: `${subtitlePos}%` }}
+                  onMouseDown={(e) => { e.stopPropagation(); startDragging(e); }}
+                  onTouchStart={(e) => { e.stopPropagation(); startDragging(e); }}
+                >
+                  <span className="font-black uppercase tracking-tighter pointer-events-none" style={{ fontFamily: 'NotoSansTight, sans-serif', color: 'transparent', display: 'none' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Seek bar */}
+            <div className="flex items-center gap-3 bg-[#0c0c0c] border border-white/[0.03] rounded-2xl px-4 py-3 shadow-inner">
+              <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center active:scale-95">
+                {!paused ? (
+                  <div className="flex gap-1">
+                    <div className="w-1 h-3 bg-[#D4AF37] rounded-full"></div>
+                    <div className="w-1 h-3 bg-[#D4AF37] rounded-full"></div>
+                  </div>
+                ) : (
+                  <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-[#D4AF37] border-b-[6px] border-b-transparent ml-1"></div>
+                )}
+              </button>
+              <input type="range" min="0" max={duration || 100} step="0.01" value={currentTime} onChange={handlePhase2Seek} className="flex-1 h-2 bg-white/5 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-[#D4AF37] [&::-webkit-slider-thumb]:rounded-full cursor-pointer" />
+              <div className="shrink-0 flex gap-1 text-[9px] font-mono text-white/40">
+                <span className="text-white/80">{formatTime(currentTime)}</span>
+                <span>/</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Position / Font strip */}
+            <div className="flex items-center gap-2 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+              <span className="text-[7px] uppercase tracking-[0.2em] text-white/30 font-bold shrink-0">Pos</span>
+              <button onClick={() => setSubtitlePos(prev => Math.max(10, prev - 5))} className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[10px] active:scale-90 transition-transform">▼</button>
+              <span className="text-[8px] font-mono text-[#D4AF37] w-7 text-center shrink-0">{Math.round(subtitlePos)}%</span>
+              <button onClick={() => setSubtitlePos(prev => Math.min(90, prev + 5))} className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[10px] active:scale-90 transition-transform">▲</button>
+              <div className="w-px h-3.5 bg-white/10 shrink-0 mx-1" />
+              {/* Font dropdown */}
+              <div className="relative flex-1 flex justify-end">
+                {fontDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setFontDropdownOpen(false)} />
+                    <div className="absolute bottom-full right-0 mb-2 z-20 w-56 rounded-2xl bg-[#111] border border-white/10 overflow-hidden shadow-2xl">
+                      {FONTS.filter(f => loadedFonts.has(f.id)).map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => { setFontFamily(f.id); setFontDropdownOpen(false); }}
+                          className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${fontFamily === f.id ? 'bg-[#D4AF37]/20' : 'hover:bg-white/5'}`}
+                        >
+                          <span className="text-[9px] uppercase tracking-widest font-bold text-white/50">{f.label}</span>
+                          <span
+                            className={`text-2xl leading-none ${fontFamily === f.id ? 'text-[#D4AF37]' : 'text-white/80'}`}
+                            style={{ fontFamily: f.id }}
+                          >
+                            שלום
+                          </span>
+                        </button>
+                      ))}
+                      {loadedFonts.size === 0 && (
+                        <div className="px-4 py-3 text-[9px] text-white/30 uppercase tracking-widest">Loading fonts…</div>
+                      )}
+                    </div>
+                  </>
+                )}
+                <button
+                  onClick={() => setFontDropdownOpen(prev => !prev)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-wide transition-all ${fontDropdownOpen ? 'bg-[#D4AF37] text-black' : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10'}`}
+                >
+                  <span>{FONTS.find(f => f.id === fontFamily)?.label ?? fontFamily}</span>
+                  <span className="opacity-60">{fontDropdownOpen ? '▴' : '▾'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Timeline (word editor) */}
+            {subtitleWords.length > 0 && duration > 0 ? (
+              <div>
+                <div className="flex justify-end mb-1.5">
+                  <button
+                    onClick={handleUndo}
+                    disabled={!canUndo}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all active:scale-95 ${canUndo ? 'bg-white/5 text-white/60 hover:bg-white/10' : 'text-white/15 cursor-default'}`}
+                  >
+                    ↩ Undo
+                  </button>
+                </div>
+                <Timeline
+                  chunks={[{
+                    start: subtitleWords[0].start,
+                    end: subtitleWords[subtitleWords.length - 1].end,
+                    words: subtitleWords.map(item => ({ word: item.word, start: item.start, end: item.end, forceBreak: !!item.forceBreak })),
+                  }]}
+                  duration={duration}
+                  getCurrentTime={getTimeCallback}
+                  isPlaying={isPlayingCallback}
+                  onDragStart={() => pushHistory(subtitleWords)}
+                  onWordTimingChange={(_chunkIndex, wordIndex, patch) => {
+                    setSubtitleWords(prev => prev.map((item, i) =>
+                      i === wordIndex ? { ...item, ...patch } : item
+                    ));
+                  }}
+                  onWordTextChange={(_chunkIndex, wordIndex, text) => {
+                    pushHistory(subtitleWords);
+                    setSubtitleWords(prev => prev.map((item, i) =>
+                      i === wordIndex ? { ...item, word: text } : item
+                    ));
+                  }}
+                  onWordDelete={(_chunkIndex, wordIndex) => {
+                    pushHistory(subtitleWords);
+                    setSubtitleWords(prev => prev.filter((_, i) => i !== wordIndex));
+                  }}
+                  onWordToggleForceBreak={(_chunkIndex, wordIndex) => {
+                    pushHistory(subtitleWords);
+                    setSubtitleWords(prev => prev.map((item, i) =>
+                      i === wordIndex ? { ...item, forceBreak: !item.forceBreak } : item
+                    ));
+                  }}
+                  onSeek={(t) => {
+                    setCurrentTime(t);
+                    currentTimeRef.current = t;
+                    lastDrawnTimeRef.current = -1;
+                    if (phase2VideoRef.current) phase2VideoRef.current.currentTime = t;
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="h-16 bg-[#0c0c0c] border border-white/[0.03] rounded-2xl flex items-center justify-center">
+                <div className="text-[8px] uppercase tracking-[0.3em] text-white/10 font-bold">No subtitle data</div>
+              </div>
+            )}
+
+            {/* Size slider */}
+            <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+              <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none">Size</span>
+              <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
+            </div>
+
+            {/* Words per line selector */}
+            <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+              <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none" dir="rtl">עד __ מילים</span>
+              <div className="flex-1 flex items-center justify-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setWordsPerLine(n)}
+                    className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
+                      wordsPerLine === n
+                        ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
+                        : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col gap-3 md:gap-4 pb-4">
+              <button
+                onClick={goBackToCutMode}
+                className="w-full py-3 border border-white/10 rounded-full uppercase tracking-[0.4em] text-[8px] font-bold text-white/40 hover:bg-white/5 transition-all text-center"
+              >
+                ← Back to Cutting
+              </button>
+              <button
+                onClick={renderVideo}
+                disabled={isExporting}
+                className={`w-full py-5 rounded-full uppercase tracking-[0.5em] text-[10px] font-black transition-all ${!isExporting ? 'bg-[#D4AF37] text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] active:scale-95' : 'bg-white/5 text-white/20'}`}
+              >
+                {isExporting ? `Burning ${exportProgress}%` : 'Export Master'}
+              </button>
+            </div>
+          </div>
+        </main>
+
+        <LabelFooter />
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  PHASE 1: CUT MODE (original cutting UI, no subtitle buttons)
+  // ═══════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
       <header className="text-center space-y-2 pt-8 pb-6 relative">
@@ -584,25 +1098,6 @@ const stopLoop = () => {
                     playsInline
                   />
 
-                  {/* Subtitle overlay — visible in both CC mode and when subtitleAlwaysShow is on */}
-                  {showSubtitleOverlay && (() => {
-                    const wordObj = subtitleWords.find(w => {
-                      const rs = cutDone ? w.start : remapToExportTime(w.start, segments!, duration);
-                      const re = cutDone ? Math.max(w.start + 0.08, w.end) : Math.max(rs + 0.08, remapToExportTime(w.end, segments!, duration));
-                      return remappedCurrentTime >= rs && remappedCurrentTime <= re;
-                    });
-                    if (!wordObj) return null;
-                    const idx = subtitleWords.indexOf(wordObj);
-                    const fontSize = [14, 20, 28][idx % 3] * fontScale;
-                    return (
-                      <div className="absolute left-0 right-0 flex justify-center px-2 pointer-events-none z-10" style={{ bottom: `${subtitlePos}%` }}>
-                        <span className="uppercase leading-none" style={{ fontSize: `${fontSize}px`, fontWeight: 900, letterSpacing: '-0.04em', color: '#ffffff', fontFamily: `'${fontFamily}', sans-serif`, textShadow: '0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9)', WebkitFontSmoothing: 'antialiased' } as React.CSSProperties}>
-                          {wordObj.word}
-                        </span>
-                      </div>
-                    );
-                  })()}
-
                   {processing && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center gap-3 z-10">
                       <span className="text-[#D4AF37] text-[10px] uppercase tracking-widest animate-pulse font-bold">{status}</span>
@@ -625,204 +1120,110 @@ const stopLoop = () => {
                   </div>
                 )}
 
-                {/* ── Bottom panel — CUTTER MODE / SUBTITLE MODE ── */}
-                {segments && (
+                {/* ── Bottom panel — CUT MODE only ── */}
+                {segments && !zoomMode && (
                   <div className="w-full mb-6 space-y-2">
+                    {/* ── CUTTER MODE ── */}
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setZoom(z => Math.max(1, z / 2)); if (zoom <= 2 && timelineContainerRef.current) timelineContainerRef.current.scrollLeft = 0; }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">−</button>
+                        <span className="text-white/30 text-[9px] w-5 text-center">{zoom}×</span>
+                        <button onClick={() => setZoom(z => Math.min(16, z * 2))} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">+</button>
+                      </div>
+                    </div>
 
-                    {!subtitleMode && !zoomMode ? (
-                      <>
-                        {/* ── CUTTER MODE ── */}
-                        <div className="flex items-center justify-between px-0.5">
-                          <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => { setZoom(z => Math.max(1, z / 2)); if (zoom <= 2 && timelineContainerRef.current) timelineContainerRef.current.scrollLeft = 0; }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">−</button>
-                            <span className="text-white/30 text-[9px] w-5 text-center">{zoom}×</span>
-                            <button onClick={() => setZoom(z => Math.min(16, z * 2))} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">+</button>
+                    <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+                      <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
+                        {segments.map((seg, i) => (
+                          <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
+                        ))}
+                      </div>
+                      <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] border border-white/10 rounded-xl" style={{ width: `${zoom * 100}%`, minWidth: '100%', touchAction: zoom > 1 ? 'pan-x' : 'none' }}>
+                        {waveformBg && (
+                          <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden" style={{ backgroundImage: `url(${waveformBg})`, backgroundSize: '100% 100%', opacity: 0.2 }} />
+                        )}
+                        {segments.map((seg, i) => (
+                          <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; }}
+                            onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) / rect.width * duration; const { edge } = draggingRef.current; setSegments(prev => prev ? prev.map((s, idx) => { if (idx !== i) return s; if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }; return { ...s, end: Math.max(t, s.start + 0.1) }; }) : prev); }}
+                            onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); const dragIdx = draggingRef.current?.index ?? i; draggingRef.current = null; const seg = segmentsRef.current?.[dragIdx]; const av = getAV(); if (av && seg) av.currentTime = seg.start; if (av && !av.paused) startLoop(); }}
+                          >
+                            <div className="absolute left-0 top-0 h-full w-2 bg-[#D4AF37] rounded-l-sm pointer-events-none" />
+                            <div className="absolute left-2 right-2 top-0 bottom-0 bg-[#D4AF37]/30 pointer-events-none" />
+                            <div className="absolute right-0 top-0 h-full w-2 bg-[#D4AF37] rounded-r-sm pointer-events-none" />
                           </div>
-                        </div>
+                        ))}
+                        <div className="absolute top-0 bottom-0 w-[2px] bg-white/70 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }} />
+                      </div>
+                    </div>
 
-                        <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
-                          <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
-                            {segments.map((seg, i) => (
-                              <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
-                            ))}
-                          </div>
-                          <div ref={timelineRef} className="relative h-20 md:h-14 bg-white/[0.03] border border-white/10 rounded-xl" style={{ width: `${zoom * 100}%`, minWidth: '100%', touchAction: zoom > 1 ? 'pan-x' : 'none' }}>
-                            {waveformBg && (
-                              <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden" style={{ backgroundImage: `url(${waveformBg})`, backgroundSize: '100% 100%', opacity: 0.2 }} />
-                            )}
-                            {segments.map((seg, i) => (
-                              <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
-                                onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; }}
-                                onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) / rect.width * duration; const { edge } = draggingRef.current; setSegments(prev => prev ? prev.map((s, idx) => { if (idx !== i) return s; if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }; return { ...s, end: Math.max(t, s.start + 0.1) }; }) : prev); }}
-                                onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); const dragIdx = draggingRef.current?.index ?? i; draggingRef.current = null; const seg = segmentsRef.current?.[dragIdx]; const av = getAV(); if (av && seg) av.currentTime = seg.start; if (av && !av.paused) startLoop(); }}
-                              >
-                                <div className="absolute left-0 top-0 h-full w-2 bg-[#D4AF37] rounded-l-sm pointer-events-none" />
-                                <div className="absolute left-2 right-2 top-0 bottom-0 bg-[#D4AF37]/30 pointer-events-none" />
-                                <div className="absolute right-0 top-0 h-full w-2 bg-[#D4AF37] rounded-r-sm pointer-events-none" />
-                              </div>
-                            ))}
-                            <div className="absolute top-0 bottom-0 w-[2px] bg-white/70 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }} />
-                          </div>
-                        </div>
+                    <div ref={seekBarRef} className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }} onClick={(e) => { const av = getAV(); if (!seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}>
+                      <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
+                        <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+                      </div>
+                      <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
+                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                        onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                        onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
+                      />
+                    </div>
 
-                        <div ref={seekBarRef} className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }} onClick={(e) => { const av = getAV(); if (!seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}>
-                          <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
-                            <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                          </div>
-                          <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
-                            onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                            onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
-                          />
-                        </div>
+                    <div className="flex justify-center items-center gap-3">
+                      <button onClick={() => { const v = getAV(); const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
+                      </button>
+                      <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
+                    </div>
 
-                        <div className="flex justify-center items-center gap-3">
-                          <button onClick={() => { const v = getAV(); const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
-                          </button>
-                          <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
-                        </div>
+                    <div className="flex justify-center items-center gap-3">
+                      <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
+                      {subtitleWords.length > 0 && (
+                        <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/30 transition-colors">Done Cutting →</button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-                        <div className="flex justify-center items-center gap-3">
-                          <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
-                          {subtitleWords.length > 0 && (
-                            <>
-                              <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50 transition-colors">CC →</button>
-                              <button onClick={() => setSubtitleAlwaysShow(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${subtitleAlwaysShow ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>CC Visible</button>
-                            </>
-                          )}
-                        </div>
-                      </>
-                    ) : zoomMode ? (
-                      <>
-                        {/* ── ZOOM MODE ── */}
+                {/* ── ZOOM MODE ── */}
+                {segments && zoomMode && (
+                  <div className="w-full mb-6 space-y-2">
+                    {/* Seek bar */}
+                    <div className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }}
+                      onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                    >
+                      <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
+                        <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+                      </div>
+                      <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
+                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                        onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !av) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                        onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
+                      />
+                    </div>
 
-                        {/* Seek bar */}
-                        <div className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }}
-                          onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                        >
-                          <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
-                            <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                          </div>
-                          <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
-                            onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !av) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                            onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
-                          />
-                        </div>
+                    {/* Play controls */}
+                    <div className="flex justify-center items-center gap-3">
+                      <button onClick={() => { const v = getAV(); const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
+                      </button>
+                      <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
+                    </div>
 
-                        {/* Play controls */}
-                        <div className="flex justify-center items-center gap-3">
-                          <button onClick={() => { const v = getAV(); const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
-                          </button>
-                          <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
-                        </div>
+                    {/* Zoom settings */}
+                    <div className="flex flex-col items-center gap-3 py-2">
+                      <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Zoom Frequency</span>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => { setZoomFreq(1); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 1 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Fast</button>
+                        <button onClick={() => { setZoomFreq(4); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 4 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Subtle</button>
+                      </div>
+                    </div>
 
-                        {/* Zoom settings */}
-                        <div className="flex flex-col items-center gap-3 py-2">
-                          <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Zoom Frequency</span>
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => { setZoomFreq(1); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 1 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Fast</button>
-                            <button onClick={() => { setZoomFreq(4); setZoomPerCut(true); }} className={`px-6 py-2 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 4 && zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Subtle</button>
-                          </div>
-                        </div>
-
-                        {/* Bottom row: ← back | off toggle */}
-                        <div className="flex items-center justify-between px-0.5">
-                          <button onClick={() => setZoomMode(false)} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
-                          <button onClick={() => setZoomPerCut(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>{zoomPerCut ? 'Zoom On' : 'Zoom Off'}</button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {/* ── SUBTITLE MODE ── */}
-
-                        {/* Seek bar */}
-                        <div className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }}
-                          onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                        >
-                          <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
-                            <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                          </div>
-                          <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
-                            onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !av) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
-                            onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
-                          />
-                        </div>
-
-                        {/* Play controls */}
-                        <div className="flex justify-center items-center gap-3">
-                          <button onClick={() => { const v = getAV(); const segs = segmentsRef.current; if (!v) return; v.pause(); v.currentTime = segs?.[0]?.start ?? 0; setPaused(true); }} className="w-9 h-9 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg transition-colors">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" className="text-white/60" /><path d="M13 2.5L5 7l8 4.5V2.5Z" fill="currentColor" className="text-white/60" /></svg>
-                          </button>
-                          <button onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }} className="px-6 py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest transition-colors">{paused ? 'Play' : 'Pause'}</button>
-                        </div>
-
-                        {/* Timeline — replaces old word cards */}
-                        <Timeline
-                          chunks={[{ start: 0, end: duration, words: subtitleWords }]}
-                          duration={duration}
-                          getCurrentTime={() => getAV()?.currentTime ?? 0}
-                          isPlaying={() => !paused}
-                          onWordTimingChange={(_, wordIndex, patch) => {
-                            setSubtitleWords(prev => prev.map((w, i) => i === wordIndex ? { ...w, ...patch } : w));
-                          }}
-                          onWordTextChange={(_, wordIndex, text) => {
-                            setSubtitleWords(prev => prev.map((w, i) => i === wordIndex ? { ...w, word: text } : w));
-                          }}
-                          onWordDelete={(_, wordIndex) => {
-                            setSubtitleWords(prev => prev.filter((_, i) => i !== wordIndex));
-                          }}
-                          onSeek={(t) => {
-                            const av = getAV();
-                            if (!av) return;
-                            av.currentTime = t;
-                            if (!av.paused) startLoop();
-                          }}
-                          onDragStart={() => {
-                            getAV()?.pause();
-                            stopLoop();
-                            setPaused(true);
-                          }}
-                        />
-
-                        {/* Font selector */}
-                        <div className="flex gap-1.5 overflow-x-auto select-none" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
-                          {FONTS.filter(f => loadedFonts.has(f.id)).map(f => (
-                            <button key={f.id} onClick={() => setFontFamily(f.id)}
-                              className={`flex-shrink-0 px-3 py-1.5 rounded-lg border text-[9px] tracking-wide transition-colors ${fontFamily === f.id ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]' : 'bg-white/[0.03] border-white/[0.06] text-white/30 hover:text-white/50'}`}
-                              style={{ fontFamily: f.id }}
-                            >{f.label}</button>
-                          ))}
-                        </div>
-
-                        {/* Bottom row: ← back | size | pos | ✓ show in cut */}
-                        <div className="flex items-center justify-between px-0.5 gap-2">
-                          <button onClick={() => {
-                            if (cutDone) {
-                              setVideoUrl(origVideoUrlRef.current!);
-                              setSubtitleWords(origSubtitleWordsRef.current);
-                              setCutDone(false);
-                            }
-                            setSubtitleMode(false);
-                          }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Size</span>
-                            <input type="range" min="0.5" max="2" step="0.1" value={fontScale} onChange={e => setFontScale(parseFloat(e.target.value))} className="w-16 accent-[#D4AF37]" />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => setSubtitlePos(p => Math.min(90, p + 5))} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">↑</button>
-                            <button onClick={() => setSubtitlePos(p => Math.max(5, p - 5))} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">↓</button>
-                          </div>
-                          {/* Show subtitles in cut mode toggle */}
-                          <button onClick={() => setSubtitleAlwaysShow(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${subtitleAlwaysShow ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>CC Visible</button>
-                        </div>
-                      </>
-                    )}
-
+                    {/* Bottom row: ← back | off toggle */}
+                    <div className="flex items-center justify-between px-0.5">
+                      <button onClick={() => setZoomMode(false)} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
+                      <button onClick={() => setZoomPerCut(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>{zoomPerCut ? 'Zoom On' : 'Zoom Off'}</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -845,7 +1246,7 @@ const stopLoop = () => {
               <button onClick={analyzeVideo} disabled={processing} className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black bg-[#D4AF37] text-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">{processing ? "Analysing..." : "Cut Video"}</button>
             )}
             {segments && (
-              <button onClick={renderVideo} disabled={processing} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
+              <button onClick={renderVideo} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
             )}
           </div>
         </div>

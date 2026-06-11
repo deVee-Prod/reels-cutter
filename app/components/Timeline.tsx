@@ -7,6 +7,7 @@ const TRACK_HEIGHT = 56;
 const RULER_HEIGHT = 24;
 const MIN_WORD_DURATION = 0.05;
 const CLICK_THRESHOLD_PX = 5;
+const LONG_PRESS_MS = 500;
 
 function formatTimeShort(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) sec = 0;
@@ -68,6 +69,7 @@ interface TimelineProps {
   isPlaying: () => boolean;
   onWordTimingChange: (chunkIndex: number, wordIndex: number, patch: Partial<Word>) => void;
   onWordTextChange?: (chunkIndex: number, wordIndex: number, text: string) => void;
+  onWordToggleForceBreak?: (chunkIndex: number, wordIndex: number) => void;
   onWordDelete?: (chunkIndex: number, wordIndex: number) => void;
   onSeek?: (t: number) => void;
   onDragStart?: () => void;
@@ -80,6 +82,7 @@ export default function Timeline({
   isPlaying,
   onWordTimingChange,
   onWordTextChange,
+  onWordToggleForceBreak,
   onWordDelete,
   onSeek,
   onDragStart,
@@ -102,10 +105,15 @@ export default function Timeline({
   const lastTapTimeRef = useRef<number>(0);
   const onWordDeleteRef = useRef(onWordDelete);
   useEffect(() => { onWordDeleteRef.current = onWordDelete; });
+  const onWordToggleForceBreakRef = useRef(onWordToggleForceBreak);
+  useEffect(() => { onWordToggleForceBreakRef.current = onWordToggleForceBreak; });
   const onWordTimingChangeRef = useRef(onWordTimingChange);
   useEffect(() => { onWordTimingChangeRef.current = onWordTimingChange; });
   const chunksRef = useRef(chunks);
   useEffect(() => { chunksRef.current = chunks; });
+  // Long-press timer for toggling forceBreak
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredRef = useRef(false);
 
   const safeDuration = Math.max(1, Number.isFinite(duration) ? duration : 0);
   const safeDurationRef = useRef(safeDuration);
@@ -207,6 +215,18 @@ export default function Timeline({
     e.stopPropagation();
     const t0 = pointerXToTime(e.nativeEvent);
     setDrag({ fw, edge: 'body', t0, originalStart: fw.start, originalEnd: fw.end, startClientX: e.clientX, startClientY: e.clientY });
+
+    // Start long-press timer for forceBreak toggle
+    longPressFiredRef.current = false;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      if (onWordToggleForceBreakRef.current) {
+        onWordToggleForceBreakRef.current(fw.chunkIndex, fw.wordIndex);
+      }
+      // Vibrate on mobile for tactile feedback
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+    }, LONG_PRESS_MS);
   }
 
   useEffect(() => {
@@ -214,6 +234,15 @@ export default function Timeline({
 
     function onMove(e: PointerEvent) {
       if (!drag) return;
+      // Cancel long-press if pointer moved (it's a drag, not a hold)
+      if (longPressTimerRef.current) {
+        const movedX = Math.abs(e.clientX - drag.startClientX);
+        const movedY = Math.abs(e.clientY - drag.startClientY);
+        if (movedX > 5 || movedY > 5) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+      }
       const words = chunksRef.current[drag.fw.chunkIndex].words;
       const dur = safeDurationRef.current;
       let patch: Partial<Word> = {};
@@ -253,7 +282,20 @@ export default function Timeline({
     }
 
     function onUp(e: PointerEvent) {
+      // Cancel long-press timer
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
       if (drag) {
+        // If long press already fired, skip tap/click logic
+        if (longPressFiredRef.current) {
+          longPressFiredRef.current = false;
+          setDrag(null);
+          setTooltip(null);
+          return;
+        }
         const movedX = Math.abs(e.clientX - drag.startClientX);
         const movedY = Math.abs(e.clientY - drag.startClientY);
         const threshold = e.pointerType === 'touch' ? 10 : CLICK_THRESHOLD_PX;
@@ -401,6 +443,7 @@ export default function Timeline({
               const isSelected = selectedKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const cls = [
                 'group absolute top-0 flex h-full items-center rounded-sm transition-colors',
+                fw.forceBreak ? 'border-l-[3px] border-l-orange-400' : '',
                 isEditing  ? 'bg-[#92700B] ring-2 ring-[#D4AF37]' :
                 isSelected ? 'bg-[#92700B] ring-2 ring-red-400/70 z-10' :
                 isActive   ? 'bg-[#D4AF37] z-10 ring-2 ring-white/80' :
@@ -413,7 +456,7 @@ export default function Timeline({
                   onPointerDown={(e) => onBodyPointerDown(e, fw)}
                   className={cls}
                   style={{ left: `${left}px`, width: `${width}px`, cursor: isEditing ? 'text' : 'grab', touchAction: 'none' }}
-                  title={isEditing ? 'Edit word' : `${fw.word} · ${formatTimeFull(fw.start)} → ${formatTimeFull(fw.end)}`}
+                  title={isEditing ? 'Edit word' : `${fw.word} · ${formatTimeFull(fw.start)} → ${formatTimeFull(fw.end)}${fw.forceBreak ? ' ✂ force break' : ''}`}
                 >
                   {!isEditing && (
                     <div onPointerDown={(e) => onEdgePointerDown(e, fw, 'left')} className="absolute left-0 top-0 h-full cursor-ew-resize bg-black/0 hover:bg-black/40" style={{ touchAction: 'none', width: `${handleW}px` }} />
