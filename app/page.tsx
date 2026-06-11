@@ -403,24 +403,40 @@ export default function ReelsCutterPage() {
 
   useEffect(() => { togglePlayRef.current = togglePlay; });
 
-  // Spacebar for play/pause in Phase 2 + Cmd+Z for undo
+  // Global Keydown Handler (Spacebar + Undo)
   useEffect(() => {
-    if (!cutDone) return;
     const handleKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault();
-        handleUndo();
-        return;
-      }
-      if (e.key !== ' ') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-      e.preventDefault();
-      togglePlayRef.current();
+
+      if (e.key === ' ') {
+        e.preventDefault(); // Stop scrolling or pressing focused buttons
+        if (cutDoneRef.current) {
+          togglePlayRef.current();
+        } else {
+          const av = activeIsARef.current ? videoARef.current : videoBRef.current;
+          if (av) av.paused ? av.play() : av.pause();
+        }
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (cutDoneRef.current) {
+          handleUndo();
+        } else {
+          const h = cutHistoryRef.current;
+          if (h.length > 0) {
+            const prev = h.pop();
+            setSegments(prev ?? null);
+            setCanUndoCut(h.length > 0);
+          }
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [cutDone, handleUndo]);
+  }, [handleUndo]);
 
   // Phase 2: seek handler
   const handlePhase2Seek = (e: React.ChangeEvent<HTMLInputElement>) => {
