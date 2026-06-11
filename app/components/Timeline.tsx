@@ -443,7 +443,6 @@ export default function Timeline({
               const isSelected = selectedKey === `${fw.chunkIndex}-${fw.wordIndex}`;
               const cls = [
                 'group absolute top-0 flex h-full items-center rounded-sm transition-colors',
-                fw.forceBreak ? 'border-l-[3px] border-l-orange-400' : '',
                 isEditing  ? 'bg-[#92700B] ring-2 ring-[#D4AF37]' :
                 isSelected ? 'bg-[#92700B] ring-2 ring-red-400/70 z-10' :
                 isActive   ? 'bg-[#D4AF37] z-10 ring-2 ring-white/80' :
@@ -460,6 +459,10 @@ export default function Timeline({
                 >
                   {!isEditing && (
                     <div onPointerDown={(e) => onEdgePointerDown(e, fw, 'left')} className="absolute left-0 top-0 h-full cursor-ew-resize bg-black/0 hover:bg-black/40" style={{ touchAction: 'none', width: `${handleW}px` }} />
+                  )}
+
+                  {fw.forceBreak && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-600 rounded-l-sm" />
                   )}
 
                   {isEditing ? (
