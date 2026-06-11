@@ -138,6 +138,7 @@ export default function ReelsCutterPage() {
   const origSubtitleWordsRef = useRef<{ word: string; start: number; end: number }[]>([]);
   const origVideoWidthRef = useRef(0);
   const origWidthCapturedRef = useRef(false);
+  const hasAutoAnalyzed = useRef(false);
 
   // Phase 2 refs (ported from Dubber)
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -506,6 +507,7 @@ export default function ReelsCutterPage() {
       setCutDone(false);
       setWaveformBg(null);
       origWidthCapturedRef.current = false;
+      hasAutoAnalyzed.current = false;
       setProgress(0);
       setStatus("Ready");
       activeIsARef.current = true;
@@ -546,6 +548,14 @@ export default function ReelsCutterPage() {
     warmingUpRef.current = false;
     video.currentTime = segs[0].start;
   };
+
+  useEffect(() => {
+    if (videoFile && loaded && !hasAutoAnalyzed.current && !processing) {
+      hasAutoAnalyzed.current = true;
+      analyzeVideo();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoFile, loaded]);
 
   // ── Phase 1: Analyze video ──
   const analyzeVideo = async () => {
@@ -1281,7 +1291,9 @@ export default function ReelsCutterPage() {
               <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
             )}
             {!segments && videoFile && (
-              <button onClick={analyzeVideo} disabled={processing} className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black bg-[#D4AF37] text-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">{processing ? "Analysing..." : "Cut Video"}</button>
+              <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
+                Waiting for Auto Cut...
+              </div>
             )}
             {segments && (
               <button onClick={renderVideo} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
