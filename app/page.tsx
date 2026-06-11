@@ -110,8 +110,8 @@ export default function ReelsCutterPage() {
   const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
   const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
   const [subtitlePos, setSubtitlePos] = useState(15);
-  const [fontScale, setFontScale] = useState(0.8);
-  const [wordsPerLine, setWordsPerLine] = useState(1);
+  const [fontScale, setFontScale] = useState(0.6);
+  const [wordsPerLine, setWordsPerLine] = useState(2);
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canUndoCut, setCanUndoCut] = useState(false);
@@ -144,7 +144,7 @@ export default function ReelsCutterPage() {
   const phase2VideoRef = useRef<HTMLVideoElement>(null);
   const subtitlePosRef = useRef(15);
   const fontFamilyRef = useRef<FontId>('NotoSansTight');
-  const wordsPerLineRef = useRef(1);
+  const wordsPerLineRef = useRef(2);
   const currentTimeRef = useRef(0);
   const lastDrawnTimeRef = useRef(-1);
   const historyRef = useRef<any[][]>([]);
