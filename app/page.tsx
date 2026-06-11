@@ -250,9 +250,8 @@ export default function ReelsCutterPage() {
 
       const seekTo = (target: number) => {
         programmaticSeekRef.current = true;
-        v.muted = true;
         v.currentTime = target;
-        const done = () => { v.muted = false; startLoop(); };
+        const done = () => { startLoop(); };
         const fallback = setTimeout(done, 800);
         v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
       };
