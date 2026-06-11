@@ -866,14 +866,14 @@ export default function ReelsCutterPage() {
 
             {/* Seek bar */}
             <div className="flex items-center gap-3 bg-[#0c0c0c] border border-white/[0.03] rounded-2xl px-4 py-3 shadow-inner">
-              <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center active:scale-95">
+              <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.3)] active:scale-95 transition-transform">
                 {!paused ? (
                   <div className="flex gap-1">
-                    <div className="w-1 h-3 bg-[#D4AF37] rounded-full"></div>
-                    <div className="w-1 h-3 bg-[#D4AF37] rounded-full"></div>
+                    <div className="w-1 h-3 bg-black rounded-full"></div>
+                    <div className="w-1 h-3 bg-black rounded-full"></div>
                   </div>
                 ) : (
-                  <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-[#D4AF37] border-b-[6px] border-b-transparent ml-1"></div>
+                  <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent ml-1"></div>
                 )}
               </button>
               <input type="range" min="0" max={duration || 100} step="0.01" value={currentTime} onChange={handlePhase2Seek} className="flex-1 h-2 bg-white/5 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-[#D4AF37] [&::-webkit-slider-thumb]:rounded-full cursor-pointer" />
