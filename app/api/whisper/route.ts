@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     });
     // ─────────────────────────────────────────────────────────
 
-    const segments = buildSpeechSegments(words, 0.4);
+    const segments = buildSpeechSegments(words, 0.2);
 
     console.log('=== SEGMENTS ===');
     segments.forEach((s, i) => {
