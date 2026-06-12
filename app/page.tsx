@@ -1229,6 +1229,27 @@ export default function ReelsCutterPage() {
                         >
                           <span className="text-[11px]">↩️</span> UNDO
                         </button>
+                        <button
+                          onClick={() => {
+                            if (!segments) return;
+                            const t = currentTime;
+                            const idx = segments.findIndex(s => t > s.start + 0.1 && t < (s.end ?? duration) - 0.1);
+                            if (idx !== -1) {
+                              cutHistoryRef.current.push([...segments]);
+                              setCanUndoCut(true);
+                              const seg = segments[idx];
+                              const newSegs = [...segments];
+                              newSegs.splice(idx, 1, 
+                                { start: seg.start, end: t },
+                                { start: t, end: seg.end }
+                              );
+                              setSegments(newSegs);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase flex items-center gap-1.5 transition-colors ${segments?.some(s => currentTime > s.start + 0.1 && currentTime < (s.end ?? duration) - 0.1) ? 'bg-[#D4AF37] text-black active:scale-95 hover:bg-[#E5BE48]' : 'bg-white/5 text-white/20 pointer-events-none'}`}
+                        >
+                          <span className="text-[11px]">✂️</span> SPLIT
+                        </button>
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setZoom(z => Math.max(1, z / 2)); if (zoom <= 2 && timelineContainerRef.current) timelineContainerRef.current.scrollLeft = 0; }} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors">−</button>
