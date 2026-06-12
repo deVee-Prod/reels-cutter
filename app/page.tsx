@@ -563,10 +563,67 @@ export default function ReelsCutterPage() {
     const ffmpeg = ffmpegRef.current;
     const { fetchFile } = await import('@ffmpeg/util');
     try {
-      setStatus("Extracting audio...");
+      setStatus("Extracting audio & analyzing silence...");
       setProgress(0);
       await ffmpeg.writeFile('input.mov', await fetchFile(videoFile));
-      await ffmpeg.exec(['-i', 'input.mov', '-vn', '-ar', '16000', '-ac', '1', 'whisper.mp3']);
+
+      const silenceLog: string[] = [];
+      const logHandler = ({ message }: { message: string }) => silenceLog.push(message);
+      ffmpeg.on('log', logHandler);
+
+      await ffmpeg.exec([
+        '-i', 'input.mov',
+        '-af', 'silencedetect=noise=-30dB:d=0.4',
+        '-vn', '-ar', '16000', '-ac', '1',
+        'whisper.mp3'
+      ]);
+
+      ffmpeg.off('log', logHandler);
+
+      // Parse silencedetect logs
+      let totalDuration = 0;
+      const silences: { start: number; end: number }[] = [];
+      let currentSilenceStart = -1;
+
+      for (const line of silenceLog) {
+        const durMatch = line.match(/Duration:\s+(\d+):(\d+):([\d.]+)/);
+        if (durMatch) {
+          totalDuration = parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3]);
+        }
+        const startMatch = line.match(/silence_start:\s+([\d.]+)/);
+        if (startMatch) currentSilenceStart = parseFloat(startMatch[1]);
+        
+        const endMatch = line.match(/silence_end:\s+([\d.]+)/);
+        if (endMatch && currentSilenceStart !== -1) {
+          silences.push({ start: currentSilenceStart, end: parseFloat(endMatch[1]) });
+          currentSilenceStart = -1;
+        }
+      }
+      if (totalDuration === 0) totalDuration = 9999;
+      if (currentSilenceStart !== -1) {
+        silences.push({ start: currentSilenceStart, end: totalDuration });
+      }
+
+      // Build speech segments by inverting silences
+      const speechSegments: { start: number; end: number | null }[] = [];
+      const padding = 0.1;
+      let currentPos = 0;
+      for (const s of silences) {
+        if (s.start > currentPos + 0.1) {
+          speechSegments.push({
+            start: Math.max(0, currentPos - padding),
+            end: totalDuration > 0 ? Math.min(totalDuration, s.start + padding) : s.start + padding
+          });
+        }
+        currentPos = s.end;
+      }
+      if (currentPos < totalDuration || silences.length === 0) {
+        speechSegments.push({
+          start: Math.max(0, currentPos - padding),
+          end: null
+        });
+      }
+
       const audioData = await ffmpeg.readFile('whisper.mp3');
       const audioRawBuffer = (audioData as any).buffer as ArrayBuffer;
       const audioBlob = new Blob([audioRawBuffer], { type: 'audio/mpeg' });
@@ -605,15 +662,13 @@ export default function ReelsCutterPage() {
       const res = await whisperPromise;
       const data = await res.json();
       
-      if (data.segments) {
-        setSegments(data.segments);
-        if (data.words) setSubtitleWords(data.words);
-        
-        setStatus("Preparing edit...");
-        setProgress(0);
-        await warmupSegments(data.segments);
-        setStatus("Review Edit");
-      }
+      setSegments(speechSegments);
+      if (data.words) setSubtitleWords(data.words);
+      
+      setStatus("Preparing edit...");
+      setProgress(0);
+      await warmupSegments(speechSegments);
+      setStatus("Review Edit");
     } catch (e) {
       setStatus("Error");
     } finally {
