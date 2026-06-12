@@ -246,7 +246,7 @@ export default function ReelsCutterPage() {
       const dur = durationRef.current;
       if (!v || !segs || v.paused || draggingRef.current || seekDraggingRef.current || warmingUpRef.current) { rafRef.current = null; return; }
       const t = v.currentTime;
-      const inSeg = segs.find(s => t >= s.start && t <= (s.end ?? dur));
+      const inSeg = segs.find(s => t >= s.start - 0.1 && t <= (s.end ?? dur));
 
       const seekTo = (target: number) => {
         programmaticSeekRef.current = true;
