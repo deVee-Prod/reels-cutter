@@ -1180,7 +1180,7 @@ export default function ReelsCutterPage() {
                       </div>
                     </div>
 
-                    <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+                    <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
                       <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
                         {segments.map((seg, i) => (
                           <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
