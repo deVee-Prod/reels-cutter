@@ -1224,7 +1224,14 @@ export default function ReelsCutterPage() {
                             <div className="absolute right-0 top-0 h-full w-2 bg-[#D4AF37] rounded-r-sm pointer-events-none" />
                           </div>
                         ))}
-                        <div className="absolute top-0 bottom-0 w-[2px] bg-white/70 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }} />
+                        {/* Red Draggable Playhead */}
+                        <div className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-4 h-4 bg-red-500 rotate-45 cursor-grab active:cursor-grabbing pointer-events-auto shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                            onPointerMove={(e) => { if (!seekDraggingRef.current || !timelineRef.current) return; const av = getAV(); if (!av) return; const rect = timelineRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
+                            onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
+                          />
+                        </div>
                       </div>
                     </div>
 
