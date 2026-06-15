@@ -111,6 +111,7 @@ export default function ReelsCutterPage() {
   const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
   const [subtitlePos, setSubtitlePos] = useState(15);
   const [fontScale, setFontScale] = useState(0.6);
+  const [enablePump, setEnablePump] = useState(true);
   const [wordsPerLine, setWordsPerLine] = useState(2);
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
@@ -345,7 +346,7 @@ export default function ReelsCutterPage() {
 
           if (activeGroup) {
             const lineText = activeGroup.map((w: any) => w.word).join(' ');
-            const baseSize = [28, 42, 58][groupStartIndex % 3] * fontScale;
+            const baseSize = (enablePump ? [28, 42, 58][groupStartIndex % 3] : 42) * fontScale;
             const fontSize = Math.round(baseSize * (canvas.height / 500));
             const x = canvas.width / 2;
             const y = canvas.height - (canvas.height * subtitlePosRef.current / 100);
@@ -742,7 +743,7 @@ export default function ReelsCutterPage() {
             .replace(/\]/g, '\\]');
           if (!safeWord) return null;
 
-          const baseSize = [28, 42, 58][groupIndex % 3] * fontScale;
+          const baseSize = (enablePump ? [28, 42, 58][groupIndex % 3] : 42) * fontScale;
           const fontSize = Math.round(baseSize * scaleRatio);
 
           const rs = cutDone ? group[0].start : remapToExportTime(group[0].start, segments, duration);
@@ -1018,10 +1019,16 @@ export default function ReelsCutterPage() {
               </div>
             )}
 
-            {/* Size slider */}
+            {/* Size & Pump slider */}
             <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
               <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none">Size</span>
               <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
+              <button
+                onClick={() => setEnablePump(p => !p)}
+                className={`ml-2 px-3 py-1.5 rounded-lg text-[8px] uppercase tracking-widest font-bold transition-all ${enablePump ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30' : 'bg-white/5 text-white/30 border border-white/5'}`}
+              >
+                Pump {enablePump ? 'ON' : 'OFF'}
+              </button>
             </div>
 
             {/* Words per line selector */}
