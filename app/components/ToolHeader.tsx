@@ -48,7 +48,7 @@ export function ToolHeader() {
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setMenuOpen(false)}
-            className="text-2xl font-bold text-white hover:text-[#D4AF37] transition-colors duration-300 tracking-wider"
+            className="text-2xl font-bold text-white hover:text-[#ea580c] transition-colors duration-300 tracking-wider"
           >
             Home
           </a>
