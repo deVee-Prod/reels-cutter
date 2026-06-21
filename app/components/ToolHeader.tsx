@@ -41,7 +41,8 @@ export function ToolHeader() {
           menuOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <nav className="flex flex-col items-center justify-start h-full space-y-8 pt-24">
+        <nav className="flex flex-col items-center justify-start h-full space-y-8 pt-24" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <style>{`@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap');`}</style>
           <a
             href="https://devee-music.com"
             target="_blank"
