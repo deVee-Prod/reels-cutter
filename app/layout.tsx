@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: 'Reels Cutter',
-  description: "The ultimate video editor: cut and create subtitles.",
+  description: "The ultimate editor for Reels & Shorts: cut and create subtitles.",
   icons: {
     icon: '/favicon.png',
   },
