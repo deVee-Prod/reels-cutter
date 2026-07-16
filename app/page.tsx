@@ -801,7 +801,7 @@ export default function ReelsCutterPage() {
           This is a Premium Tool.<br />Sign in with Google at deVee Music to get access.
         </p>
         <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.9rem', fontFamily: 'sans-serif', lineHeight: 1.6, maxWidth: 320 }}>
-          זהו כלי פרימיום.<br />התחבר עם חשבון Google שלך באתר deVee Music כדי לקבל גישה.
+          This is a premium tool.<br />Login with your Google account on deVee Music to get access.
         </p>
         <a href="https://devee-music.com" style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem', fontFamily: 'sans-serif', textDecoration: 'none', letterSpacing: '0.05em' }}>
           ← Back to deVee Music
@@ -824,7 +824,7 @@ export default function ReelsCutterPage() {
               <span className="text-[#D4AF37] text-[9px] tracking-[0.35em] uppercase font-semibold">1080p Vertical Video</span>
               <div className="h-px w-8 bg-[#D4AF37]/30" />
             </div>
-            <p dir="rtl" className="text-white text-[11px] tracking-[0.05em] font-light">מיועד לסרטוני וידאו אנכי <span dir="ltr">1080p</span></p>
+            <p className="text-white text-[11px] tracking-[0.05em] font-light uppercase">For Vertical 1080p Video</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4 bg-[#0c0c0c]/40 p-8 rounded-[24px] border border-white/5 backdrop-blur-xl w-full">
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none" placeholder="ACCESS KEY" />
@@ -1031,7 +1031,7 @@ export default function ReelsCutterPage() {
 
             {/* Words per line selector */}
             <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
-              <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none" dir="rtl">עד __ מילים</span>
+              <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none">UP TO __ WORDS</span>
               <div className="flex-1 flex items-center justify-center gap-1.5">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
@@ -1153,7 +1153,7 @@ export default function ReelsCutterPage() {
                 {segments && (
                   <div className="flex flex-col items-center gap-1 mt-2 mb-2">
                     <p className="text-white/60 text-[8px] tracking-[0.12em] font-light">Don&apos;t worry about the quality — it&apos;s just a preview</p>
-                    <p dir="rtl" className="text-white/60 text-[8px] tracking-[0.05em] font-light">לא לדאוג מהאיכות זה רק תצוגה מקדימה</p>
+                    <p className="text-white/60 text-[8px] tracking-[0.05em] font-light uppercase">Do not worry about quality, this is only a preview</p>
                   </div>
                 )}
 
