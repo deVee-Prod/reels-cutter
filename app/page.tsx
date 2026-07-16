@@ -813,11 +813,10 @@ export default function ReelsCutterPage() {
   if (!authorized) {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center text-center">
-        <header className="space-y-2 pt-8 pb-6 relative">
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
-          <Image src="/logo.png" alt="Logo" width={100} height={32} className="mx-auto opacity-90 relative" />
-          <p className="text-[9px] tracking-[0.3em] text-white/70 font-bold uppercase">REELS CUTTER</p>
-        </header>
+        <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+        <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
+        <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
+      </header>
         <main className="flex-1 flex flex-col justify-center w-full max-w-[340px] px-4">
           <div className="mb-8 flex flex-col items-center gap-3 text-center">
             <div className="flex items-center gap-2">
@@ -847,11 +846,10 @@ export default function ReelsCutterPage() {
   if (cutDone && videoUrl) {
     return (
       <div className="min-h-[100dvh] w-full text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
-        <header className="w-full text-center space-y-2 pt-8 pb-6 relative z-10">
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
-          <Image src="/logo.png" alt="deVee" width={80} height={26} className="opacity-80 mx-auto relative" />
-          <p className="text-[9px] tracking-[0.3em] text-white/70 font-bold uppercase">REELS CUTTER — SUBTITLES</p>
-        </header>
+        <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+        <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
+        <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
+      </header>
 
         <main className="w-full max-w-2xl mx-auto flex flex-col items-center flex-1 px-4 md:px-6 space-y-3 md:space-y-5 py-4 md:py-6">
           <div className="w-full space-y-3 md:space-y-5">
@@ -1080,10 +1078,9 @@ export default function ReelsCutterPage() {
   // ═══════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
-      <header className="text-center space-y-2 pt-8 pb-6 relative">
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-56 h-20 bg-[#D4AF37] blur-[55px] opacity-[0.14] pointer-events-none" />
-        <Image src="/logo.png" alt="Logo" width={80} height={26} className="opacity-90 mx-auto relative" />
-        <p className="text-[9px] tracking-[0.3em] text-white/70 font-bold uppercase">REELS CUTTER</p>
+      <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+        <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
+        <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
 
       <main className="w-full max-w-[550px] mx-auto flex flex-col items-center flex-1 justify-center px-2 md:px-6 gap-4 py-6">
