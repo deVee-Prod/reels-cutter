@@ -46,12 +46,13 @@ function buildWordGroups<T extends { start: number; end: number; forceBreak?: bo
 
 function LabelFooter() {
   return (
-    <footer className="w-full py-12 flex flex-col items-center space-y-4 mt-auto">
-      <p className="text-[10px] tracking-[0.2em] font-medium text-white/60">Powered By deVee Boutique Label</p>
-      <div className="w-12 h-12 rounded-full overflow-hidden">
-        <Image src="/label_logo.png" alt="deVee Label" width={48} height={48} className="object-cover" />
-      </div>
-    </footer>
+    <div className="hidden md:flex fixed bottom-6 left-6 z-50 opacity-40 hover:opacity-100 transition-opacity duration-300">
+      <a href="https://devee-music.com" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+          <img src="/label_logo.png" alt="deVee" className="w-full h-full object-cover" />
+        </div>
+      </a>
+    </div>
   );
 }
 
