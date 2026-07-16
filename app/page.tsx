@@ -814,7 +814,7 @@ export default function ReelsCutterPage() {
   if (!authorized) {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center text-center">
-        <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+        <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
         <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
         <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
@@ -847,7 +847,7 @@ export default function ReelsCutterPage() {
   if (cutDone && videoUrl) {
     return (
       <div className="min-h-[100dvh] w-full text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
-        <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+        <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
         <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
         <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
@@ -1079,7 +1079,7 @@ export default function ReelsCutterPage() {
   // ═══════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden font-sans">
-      <header className="relative z-20 flex flex-col items-center shrink-0 mb-4 pt-6">
+      <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
         <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
         <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
