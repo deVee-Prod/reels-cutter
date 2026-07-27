@@ -44,17 +44,6 @@ function buildWordGroups<T extends { start: number; end: number; forceBreak?: bo
   return groups;
 }
 
-function LabelFooter() {
-  return (
-    <div className="hidden md:flex fixed bottom-6 right-6 z-50 opacity-40 hover:opacity-100 transition-opacity duration-300">
-      <a href="https://devee-music.com" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-          <img src="/label_logo.png" alt="deVee" className="w-full h-full object-cover" />
-        </div>
-      </a>
-    </div>
-  );
-}
 
 
 function remapToExportTime(
@@ -1335,14 +1324,7 @@ export default function ReelsCutterPage() {
           </div>
         </div>
       </main>
-      {/* Floating Logo Watermark (Desktop Only) */}
-      <div className="hidden md:flex fixed bottom-6 right-6 z-50 opacity-40 hover:opacity-100 transition-opacity duration-300">
-        <a href="https://devee-music.com" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center">
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-            <img src="/label_logo.png" alt="deVee" className="w-full h-full object-cover" />
-          </div>
-        </a>
-      </div>
+
     </div>
   );
 }
