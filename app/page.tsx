@@ -1073,9 +1073,9 @@ export default function ReelsCutterPage() {
         <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
 
-      <main className="w-full max-w-[550px] mx-auto flex flex-col items-center flex-1 justify-center px-2 md:px-6 gap-4 py-6">
-        <div className="w-full bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-4 md:p-6 relative group shadow-2xl">
-          <div className="relative flex flex-col items-center gap-4">
+      <main className={`w-full ${videoUrl ? 'max-w-[550px]' : 'max-w-2xl'} mx-auto flex flex-col items-center flex-1 justify-center px-4 md:px-6 space-y-4 md:space-y-6 py-6`}>
+        <div className={videoUrl ? "w-full bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-4 md:p-6 relative group shadow-2xl" : "w-full space-y-4 md:space-y-6"}>
+          <div className={videoUrl ? "relative flex flex-col items-center gap-4" : "w-full"}>
             {videoUrl ? (
               <div className="w-full flex flex-col items-center">
 
@@ -1299,19 +1299,17 @@ export default function ReelsCutterPage() {
                 )}
               </div>
             ) : (
-              <label className="w-full cursor-pointer">
-                <div className="w-full bg-[#080808] rounded-[28px] flex flex-col items-center justify-center py-24 md:py-32">
-                  <div className="w-14 h-14 rounded-full border border-white/20 flex items-center justify-center mb-5">
-                    <span className="text-white/35 text-2xl leading-none font-thin select-none">+</span>
-                  </div>
-                  <span className="text-[8px] uppercase tracking-[0.55em] text-white/25">Upload Media</span>
-                </div>
-                <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
-              </label>
+              <div className="relative w-full h-[40vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
+                <label className="h-48 md:h-64 w-full flex flex-col items-center justify-center cursor-pointer space-y-4">
+                  <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mx-auto text-white/20 text-xl">+</div>
+                  <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold">Upload Media</p>
+                  <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
+                </label>
+              </div>
             )}
 
             {!segments && !videoFile && (
-              <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
+              <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-4" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
             )}
             {!segments && videoFile && (
               <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
