@@ -886,9 +886,10 @@ export default function ReelsCutterPage() {
               </div>
             </div>
 
-            {/* Seek bar */}
-            <div className="flex items-center gap-3 bg-[#0c0c0c] border border-white/[0.03] rounded-2xl px-4 py-3 shadow-inner">
-              <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.3)] active:scale-95 transition-transform">
+            <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
+              {/* Seek bar */}
+              <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+                <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.3)] active:scale-95 transition-transform">
                 {!paused ? (
                   <div className="flex gap-1">
                     <div className="w-1 h-3 bg-black rounded-full"></div>
@@ -1055,6 +1056,7 @@ export default function ReelsCutterPage() {
                 {isExporting ? `Burning ${exportProgress}%` : 'Export Master'}
               </button>
             </div>
+            </div>
           </div>
         </main>
 
@@ -1073,16 +1075,15 @@ export default function ReelsCutterPage() {
         <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
       </header>
 
-      <main className={`w-full ${videoUrl ? 'max-w-[550px]' : 'max-w-2xl'} mx-auto flex flex-col items-center flex-1 justify-center px-4 md:px-6 space-y-4 md:space-y-6 py-6`}>
-        <div className={videoUrl ? "w-full bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-4 md:p-6 relative group shadow-2xl" : "w-full space-y-4 md:space-y-6"}>
-          <div className={videoUrl ? "relative flex flex-col items-center gap-4" : "w-full space-y-4 md:space-y-6"}>
+      <main className="w-full max-w-2xl mx-auto flex flex-col items-center flex-1 justify-center px-4 md:px-6 space-y-4 md:space-y-6 py-6">
+        <div className="w-full space-y-4 md:space-y-6">
+          <div className="w-full space-y-4 md:space-y-6">
             {videoUrl ? (
-              <div className="w-full flex flex-col items-center">
+              <div className="w-full space-y-4 md:space-y-6">
 
                 {/* ── Video preview ── */}
                 <div
-                  className="relative w-[200px] bg-black rounded-[30px] overflow-hidden border border-white/10 mb-2 shadow-inner flex-shrink-0"
-                  style={{ height: '356px' }}
+                  className="relative w-full h-[45vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center cursor-pointer"
                   onClick={() => { const av = getAV(); av?.paused ? av.play() : av?.pause(); }}
                 >
                   {/* Video A */}
@@ -1104,7 +1105,7 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (!activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                     style={{ opacity: activeIsA ? 1 : 0, zIndex: activeIsA ? 1 : 0, transform: `scale(${previewZoom})`, transition: 'transform 0.06s ease' }}
                     playsInline
                   />
@@ -1120,7 +1121,7 @@ export default function ReelsCutterPage() {
                       if (!e.currentTarget.paused && !draggingRef.current && !seekDraggingRef.current) startLoop();
                     }}
                     onPause={() => { if (activeIsARef.current) return; stopLoop(); if (!warmingUpRef.current) setPaused(true); }}
-                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                     style={{ opacity: activeIsA ? 0 : 1, zIndex: activeIsA ? 0 : 1, transform: `scale(${previewZoom})`, transition: 'transform 0.06s ease' }}
                     playsInline
                   />
@@ -1149,7 +1150,7 @@ export default function ReelsCutterPage() {
 
                 {/* ── Bottom panel — CUT MODE only ── */}
                 {segments && !zoomMode && (
-                  <div className="w-full mb-6 space-y-2">
+                  <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
                     {/* ── CUTTER MODE ── */}
                     <div className="flex items-center justify-between px-0.5">
                       <div className="flex items-center gap-2">
@@ -1258,7 +1259,7 @@ export default function ReelsCutterPage() {
 
                 {/* ── ZOOM MODE ── */}
                 {segments && zoomMode && (
-                  <div className="w-full mb-6 space-y-2">
+                  <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
                     {/* Seek bar */}
                     <div className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }}
                       onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
