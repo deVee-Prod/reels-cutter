@@ -1075,7 +1075,7 @@ export default function ReelsCutterPage() {
 
       <main className={`w-full ${videoUrl ? 'max-w-[550px]' : 'max-w-2xl'} mx-auto flex flex-col items-center flex-1 justify-center px-4 md:px-6 space-y-4 md:space-y-6 py-6`}>
         <div className={videoUrl ? "w-full bg-[#0c0c0c] border border-white/[0.05] rounded-[40px] p-4 md:p-6 relative group shadow-2xl" : "w-full space-y-4 md:space-y-6"}>
-          <div className={videoUrl ? "relative flex flex-col items-center gap-4" : "w-full"}>
+          <div className={videoUrl ? "relative flex flex-col items-center gap-4" : "w-full space-y-4 md:space-y-6"}>
             {videoUrl ? (
               <div className="w-full flex flex-col items-center">
 
@@ -1309,7 +1309,7 @@ export default function ReelsCutterPage() {
             )}
 
             {!segments && !videoFile && (
-              <div className="w-full flex flex-col gap-3">
+              <>
                 {/* Auto Zoom Settings */}
                 <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
                   <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Auto Zoom</span>
@@ -1358,8 +1358,8 @@ export default function ReelsCutterPage() {
                   </div>
                 </div>
 
-                <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-2" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
-              </div>
+                <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-2 mb-6" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
+              </>
             )}
             {!segments && videoFile && (
               <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
