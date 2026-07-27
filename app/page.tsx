@@ -821,7 +821,7 @@ export default function ReelsCutterPage() {
             <button type="submit" className="w-full py-3 bg-[#D4AF37] text-black rounded-xl uppercase tracking-[0.3em] text-[8px] font-black">Enter</button>
           </form>
         </main>
-        <LabelFooter />
+
       </div>
     );
   }
@@ -1058,7 +1058,7 @@ export default function ReelsCutterPage() {
           </div>
         </main>
 
-        <LabelFooter />
+
       </div>
     );
   }
