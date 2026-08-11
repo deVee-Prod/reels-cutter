@@ -468,7 +468,16 @@ export default function ReelsCutterPage() {
  video.addEventListener('loadeddata', () => { clearTimeout(t); resolve(); }, { once: true });
  });
  }
+ // Safari can return a play() promise that never settles when the element has had
+ // no user gesture of its own, so every await here is raced against a timeout. A
+ // hang would otherwise leave warmingUp set, and the playback loop bails while that
+ // flag is up — which reads as the video ignoring the segments entirely.
+ const withTimeout = (p: Promise<unknown>, ms: number) =>
+ Promise.race([p.catch(() => {}), new Promise<void>(r => setTimeout(r, ms))]);
+
+ const idle = videoBRef.current;
  warmingUpRef.current = true;
+ try {
  video.muted = true;
  const seekTo = (t: number) => new Promise<void>(resolve => {
  if (Date.now() >= globalDeadline) { resolve(); return; }
@@ -479,7 +488,7 @@ export default function ReelsCutterPage() {
  for (const seg of segs) {
  if (Date.now() >= globalDeadline) break;
  await seekTo(seg.start);
- await video.play().catch(() => {});
+ await withTimeout(video.play(), 800);
  await new Promise<void>(r => setTimeout(r, 700));
  video.pause();
  }
@@ -487,16 +496,20 @@ export default function ReelsCutterPage() {
 
  // Unlock the second element for programmatic playback. Browsers only allow
  // play() on an element that has already played once, and the hand-off between
- // segments calls play() with no user gesture of its own.
- const idle = videoBRef.current;
+ // segments calls play() with no user gesture of its own. If the browser refuses,
+ // swapToSegment falls back to seeking in place, so this is worth trying and not
+ // worth waiting on.
  if (idle) {
  idle.muted = true;
- await idle.play().catch(() => {});
- idle.pause();
+ await withTimeout(idle.play(), 600);
+ try { idle.pause(); } catch { /* never started */ }
  idle.muted = false;
  }
-
+ } finally {
+ // Whatever happened above, playback must not be left gated behind this flag
  warmingUpRef.current = false;
+ }
+
  prerolledIdxRef.current = -1;
  video.currentTime = segs[0].start;
  // Park the idle element on segment 2 so the very first hand-off is instant too
