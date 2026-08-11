@@ -171,10 +171,9 @@ export default function ReelsCutterPage() {
  // ── Phase 2: Subtitle Editor (ported from Dubber) ──
  const [cutDone, setCutDone] = useState(false);
  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number; forceBreak?: boolean }[]>([]);
- // Preset on the upload screen, handed to the editor as its starting values
- const [fontScale, setFontScale] = useState(0.6);
- const [enablePump, setEnablePump] = useState(false);
- const [wordsPerLine, setWordsPerLine] = useState(2);
+ // Silence detection, adjustable from the cut screen
+ const [cutSensitivity, setCutSensitivity] = useState(CUT_SENSITIVITY);
+ const [minSilence, setMinSilence] = useState(SILENCE_MIN_GAP);
  const [canUndoCut, setCanUndoCut] = useState(false);
  const [isExporting, setIsExporting] = useState(false);
  const [exportProgress, setExportProgress] = useState(0);
@@ -198,6 +197,10 @@ export default function ReelsCutterPage() {
  // before the decoder has caught up, so a swap could hand over a frame that is not
  // ready and the picture hitches anyway.
  const parkedTimeRef = useRef<number | null>(null);
+ // Decoded samples are kept so the sliders can re-cut instantly, without decoding
+ // the audio again and without going near the network.
+ const audioChannelRef = useRef<Float32Array | null>(null);
+ const sampleRateRef = useRef(16000);
  const warmingUpRef = useRef(false);
  const seekBarRef = useRef<HTMLDivElement>(null);
  const seekDraggingRef = useRef(false);
@@ -533,7 +536,9 @@ export default function ReelsCutterPage() {
  actx.close();
  const ch = decoded.getChannelData(0);
 
- detected = detectSpeechSegments(ch, decoded.sampleRate, SILENCE_MIN_GAP, CUT_SENSITIVITY);
+ audioChannelRef.current = ch;
+ sampleRateRef.current = decoded.sampleRate;
+ detected = detectSpeechSegments(ch, decoded.sampleRate, minSilence, cutSensitivity);
 
  const W = 1200, H = 56;
  const wc = document.createElement('canvas');
@@ -572,6 +577,17 @@ export default function ReelsCutterPage() {
  setProcessing(false);
  }
  };
+
+ // Re-cut as the sliders move. Detection is pure arithmetic over samples already in
+ // memory, so this lands in the same frame the slider does.
+ useEffect(() => {
+ const ch = audioChannelRef.current;
+ if (!ch || cutDone) return;
+ setSegments(detectSpeechSegments(ch, sampleRateRef.current, minSilence, cutSensitivity));
+ cutHistoryRef.current = [];
+ setCanUndoCut(false);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [cutSensitivity, minSilence]);
 
  // ── Transition: Phase 1 → Phase 2 ──
  const finishCutting = async () => {
@@ -816,9 +832,6 @@ export default function ReelsCutterPage() {
  isExporting={isExporting}
  exportProgress={exportProgress}
  onExport={renderVideo}
- initialFontScale={fontScale}
- initialEnablePump={enablePump}
- initialWordsPerLine={wordsPerLine}
  />
  );
  }
@@ -1088,33 +1101,30 @@ export default function ReelsCutterPage() {
  </div>
  </div>
 
- {/* Subtitle Size & Pump */}
+ {/* How much of a level drop counts as silence. Derived from the recording's own
+ noise floor, so this dial rides on top of whatever the room already sounds like. */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Size</span>
- <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
- <button
- onClick={() => setEnablePump(p => !p)}
- className={`ml-2 px-3 py-1.5 rounded-lg text-[8px] uppercase tracking-widest font-bold transition-all ${enablePump ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30' : 'bg-white/5 text-white/30 border border-white/5'}`}
- >
- Pump {enablePump ? 'ON' : 'OFF'}
- </button>
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Cut Depth</span>
+ <input type="range" min="0" max="1" step="0.05" value={cutSensitivity} onChange={(e) => setCutSensitivity(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
+ <span className="text-[8px] font-mono text-[#D4AF37] w-10 text-center shrink-0">{Math.round(cutSensitivity * 100)}%</span>
  </div>
 
- {/* Words per line */}
+ {/* Pauses shorter than this are left alone — they are the breaths inside a
+ sentence rather than the gaps between two of them. */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Words/Line</span>
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Min Pause</span>
  <div className="flex-1 flex items-center justify-center gap-1.5">
- {[1, 2, 3, 4, 5].map((n) => (
+ {[0.15, 0.25, 0.4, 0.6].map((v) => (
  <button
- key={n}
- onClick={() => setWordsPerLine(n)}
- className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
- wordsPerLine === n
+ key={v}
+ onClick={() => setMinSilence(v)}
+ className={`px-3 h-8 rounded-lg text-[10px] font-bold transition-all ${
+ minSilence === v
  ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
  : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
  }`}
  >
- {n}
+ {v}s
  </button>
  ))}
  </div>
