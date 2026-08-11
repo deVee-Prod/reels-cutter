@@ -229,6 +229,22 @@ export default function Timeline({
     }, LONG_PRESS_MS);
   }
 
+  // A drag used to re-render the whole editor once per pointermove. Recent iPhones
+  // sample touch far faster than the screen paints, so most of those renders were
+  // thrown away and the drag felt like it lagged behind the finger. Collect the
+  // latest position instead and apply it once per frame.
+  const pendingMoveRef = useRef<{ chunkIndex: number; wordIndex: number; patch: Partial<Word>; tooltip: TooltipState } | null>(null);
+  const moveFrameRef = useRef(0);
+
+  function flushPendingMove() {
+    moveFrameRef.current = 0;
+    const pending = pendingMoveRef.current;
+    if (!pending) return;
+    pendingMoveRef.current = null;
+    onWordTimingChangeRef.current(pending.chunkIndex, pending.wordIndex, pending.patch);
+    setTooltip(pending.tooltip);
+  }
+
   useEffect(() => {
     if (!drag) return;
 
@@ -276,12 +292,22 @@ export default function Timeline({
         tooltipTime = newStart;
       }
 
-      onWordTimingChangeRef.current(drag.fw.chunkIndex, drag.fw.wordIndex, patch);
       const refTime = drag.edge === 'right' ? (patch.end ?? patch.start ?? 0) : (patch.start ?? 0);
-      setTooltip({ time: tooltipTime, x: refTime * PX_PER_SEC });
+      pendingMoveRef.current = {
+        chunkIndex: drag.fw.chunkIndex,
+        wordIndex: drag.fw.wordIndex,
+        patch,
+        tooltip: { time: tooltipTime, x: refTime * PX_PER_SEC },
+      };
+      if (!moveFrameRef.current) moveFrameRef.current = requestAnimationFrame(flushPendingMove);
     }
 
     function onUp(e: PointerEvent) {
+      // Land the last sampled position before the drag ends
+      if (moveFrameRef.current) {
+        cancelAnimationFrame(moveFrameRef.current);
+        flushPendingMove();
+      }
       // Cancel long-press timer
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
@@ -335,6 +361,10 @@ export default function Timeline({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      if (moveFrameRef.current) {
+        cancelAnimationFrame(moveFrameRef.current);
+        moveFrameRef.current = 0;
+      }
     };
   }, [drag]); // chunks/safeDuration/onWordTimingChange accessed via refs — no re-attach on every render
 
