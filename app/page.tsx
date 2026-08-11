@@ -1029,9 +1029,11 @@ export default function ReelsCutterPage() {
  key={n}
  onClick={() => setWordsPerLine(n)}
  className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
+ // globals.css paints every button gold with !important, so background and
+ // colour cannot tell these five apart. Opacity and scale it does not touch.
  wordsPerLine === n
- ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
- : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
+ ? 'opacity-100 scale-110 ring-2 ring-white/70'
+ : 'opacity-30 hover:opacity-60'
  }`}
  >
  {n}
