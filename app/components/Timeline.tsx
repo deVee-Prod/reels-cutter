@@ -262,6 +262,7 @@ export default function Timeline({
       }
       if (perfOnRef.current) {
         moveCountRef.current++;
+        if (pointerXRef.current) pointerTravelRef.current += Math.abs(e.clientX - pointerXRef.current);
         pointerXRef.current = e.clientX;
       }
       const words = chunksRef.current[drag.fw.chunkIndex].words;
@@ -449,7 +450,15 @@ export default function Timeline({
   // block is keeping up, and how many events the browser is delivering.
   const moveCountRef = useRef(0);
   const pointerXRef = useRef(0);
-  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string; rate: number; gap: number } | null>(null);
+  // Distance travelled by the pointer, and by the edge it is dragging, over the same
+  // window. Every other number here converts through PX_PER_SEC on both sides, so it
+  // agrees with itself even if that conversion is wrong. These two are measured
+  // independently: if the pointer covers far more ground than the edge, the edge is
+  // not following, and the ratio says by how much.
+  const pointerTravelRef = useRef(0);
+  const edgeTravelRef = useRef(0);
+  const lastEdgePxRef = useRef<number | null>(null);
+  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string; rate: number; gap: number; moved: number; tracked: number } | null>(null);
 
   useEffect(() => {
     perfOnRef.current = new URLSearchParams(window.location.search).has('perf');
@@ -480,11 +489,20 @@ export default function Timeline({
         const w = chunksRef.current[drag.fw.chunkIndex]?.words[drag.fw.wordIndex];
         if (track && w) {
           const edgeTime = drag.edge === 'right' ? w.end : w.start;
-          gap = pointerXRef.current - (track.getBoundingClientRect().left + edgeTime * PX_PER_SEC);
+          const edgePx = track.getBoundingClientRect().left + edgeTime * PX_PER_SEC;
+          gap = pointerXRef.current - edgePx;
+          if (lastEdgePxRef.current !== null) edgeTravelRef.current += Math.abs(edgePx - lastEdgePxRef.current);
+          lastEdgePxRef.current = edgePx;
         }
+        const moved = Math.round(pointerTravelRef.current);
+        const tracked = Math.round(edgeTravelRef.current);
+        pointerTravelRef.current = 0;
+        edgeTravelRef.current = 0;
         setPerfStats({
           rate,
           gap: Math.round(gap),
+          moved,
+          tracked,
           avg: samples.reduce((a, b) => a + b, 0) / samples.length,
           max: Math.max(...samples),
           commit: commitMsRef.current,
@@ -508,6 +526,9 @@ export default function Timeline({
           <div style={{ color: perfStats.clamp.startsWith('HELD') ? '#f55' : '#0f0' }}>drag {perfStats.clamp}</div>
           <div style={{ color: Math.abs(perfStats.gap) > 12 ? '#f55' : '#0f0' }}>
             pointer {perfStats.rate}/s &nbsp; behind {perfStats.gap}px
+          </div>
+          <div style={{ color: perfStats.moved > 20 && perfStats.tracked < perfStats.moved * 0.7 ? '#f55' : '#0f0' }}>
+            mouse moved {perfStats.moved}px &nbsp; block moved {perfStats.tracked}px
           </div>
         </div>
       )}
