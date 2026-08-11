@@ -360,15 +360,26 @@ export default function ReelsCutterPage() {
  };
 
  useEffect(() => {
- const handlePointerUp = () => {
- if (draggingRef.current) {
+ // The playback loop exits while either drag flag is up, and both were only ever
+ // lowered by an element's own pointerup. Touch does not reliably end that way —
+ // Safari sends pointercancel whenever it decides a touch was really a scroll — and
+ // a flag left up stops the loop for the rest of the session, which looks like
+ // playback ignoring the segments entirely. Lower them on any pointer release,
+ // wherever it lands.
+ const releaseDrags = () => {
+ const wasDragging = draggingRef.current !== null || seekDraggingRef.current;
  draggingRef.current = null;
+ seekDraggingRef.current = false;
+ if (!wasDragging) return;
  const av = getAV();
  if (av && !av.paused) startLoop();
- }
  };
- window.addEventListener('pointerup', handlePointerUp);
- return () => window.removeEventListener('pointerup', handlePointerUp);
+ window.addEventListener('pointerup', releaseDrags);
+ window.addEventListener('pointercancel', releaseDrags);
+ return () => {
+ window.removeEventListener('pointerup', releaseDrags);
+ window.removeEventListener('pointercancel', releaseDrags);
+ };
  }, []);
 
  const handleTimeUpdate = () => {
@@ -815,7 +826,10 @@ export default function ReelsCutterPage() {
  <p className="text-white text-[11px] tracking-[0.05em] font-light uppercase">For Vertical 1080p Video</p>
  </div>
  <form onSubmit={handleLogin} className="space-y-4 bg-[#0c0c0c]/40 p-8 rounded-[24px] border border-white/5 backdrop-blur-xl w-full">
- <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none" placeholder="ACCESS KEY" />
+ {/* 16px is the threshold below which iOS zooms the page in on focus, leaving the
+ user to pinch back out afterwards. Anything smaller here costs that. */}
+ <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.3em] focus:outline-none"
+ style={{ fontSize: 16 }} placeholder="ACCESS KEY" />
  <button type="submit" className="w-full py-3 bg-[#D4AF37] text-black rounded-xl uppercase tracking-[0.3em] text-[8px] font-black">Enter</button>
  </form>
  </main>
