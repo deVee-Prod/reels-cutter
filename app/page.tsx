@@ -660,13 +660,7 @@ export default function ReelsCutterPage() {
  }));
  }
 
- // Diagnostic: ?src=original hands the editor the uploaded file instead of the
- // 360p copy ffmpeg just built. The subtitles will not line up with it, which is
- // fine — the only question this answers is whether dragging is slow because of
- // the app or because of the file it is playing, the one difference left between
- // this editor and reels-dubber's.
- const playOriginal = new URLSearchParams(window.location.search).get('src') === 'original';
- setVideoUrl(playOriginal && videoUrl ? videoUrl : cutUrl);
+ setVideoUrl(cutUrl);
  setSubtitleWords(words);
  setCutDone(true);
  setPaused(true);
@@ -919,8 +913,11 @@ export default function ReelsCutterPage() {
  </div>
  )}
 
- {/* ── Bottom panel — CUT MODE only ── */}
- {segments && !zoomMode && (
+ {/* ── Bottom panel — CUT MODE only ──
+ Rendered before an upload too, with an empty timeline. The controls a user is
+ about to reach for should already be on screen, not appear once the analysis
+ finishes — which is how reels-motion and reels-dubber both behave. */}
+ {!zoomMode && (
  <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
  {/* ── CUTTER MODE ── */}
  <div className="flex items-center justify-between px-0.5">
@@ -971,7 +968,7 @@ export default function ReelsCutterPage() {
 
  <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
  <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
- {segments.map((seg, i) => (
+ {(segments ?? []).map((seg, i) => (
  <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
  ))}
  </div>
@@ -979,7 +976,7 @@ export default function ReelsCutterPage() {
  {waveformBg && (
  <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden" style={{ backgroundImage: `url(${waveformBg})`, backgroundSize: '100% 100%', opacity: 0.2 }} />
  )}
- {segments.map((seg, i) => (
+ {(segments ?? []).map((seg, i) => (
  <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } }}
  onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) / rect.width * duration; const { edge } = draggingRef.current; setSegments(prev => prev ? prev.map((s, idx) => { if (idx !== i) return s; if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }; return { ...s, end: Math.max(t, s.start + 0.1) }; }) : prev); }}
@@ -1100,46 +1097,7 @@ export default function ReelsCutterPage() {
  )}
  </div>
  </div>
-
- {/* How much of a level drop counts as silence. Derived from the recording's own
- noise floor, so this dial rides on top of whatever the room already sounds like. */}
- <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Cut Depth</span>
- <input type="range" min="0" max="1" step="0.05" value={cutSensitivity} onChange={(e) => setCutSensitivity(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
- <span className="text-[8px] font-mono text-[#D4AF37] w-10 text-center shrink-0">{Math.round(cutSensitivity * 100)}%</span>
- </div>
-
- {/* Pauses shorter than this are left alone — they are the breaths inside a
- sentence rather than the gaps between two of them. */}
- <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Min Pause</span>
- <div className="flex-1 flex items-center justify-center gap-1.5">
- {[0.15, 0.25, 0.4, 0.6].map((v) => (
- <button
- key={v}
- onClick={() => setMinSilence(v)}
- className={`px-3 h-8 rounded-lg text-[10px] font-bold transition-all ${
- minSilence === v
- ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
- : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
- }`}
- >
- {v}s
- </button>
- ))}
- </div>
- </div>
-
- <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-2 mb-6" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
  </>
- )}
- {!segments && videoFile && (
- <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
- Waiting for Auto Cut...
- </div>
- )}
- {segments && (
- <button onClick={() => renderVideo()} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
  )}
  </div>
  </div>

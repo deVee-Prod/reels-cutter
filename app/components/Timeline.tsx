@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const PX_PER_SEC = 180;
 const TRACK_HEIGHT = 56;
@@ -241,7 +241,6 @@ export default function Timeline({
     const pending = pendingMoveRef.current;
     if (!pending) return;
     pendingMoveRef.current = null;
-    if (perfOnRef.current) commitStartRef.current = performance.now();
     onWordTimingChangeRef.current(pending.chunkIndex, pending.wordIndex, pending.patch);
     setTooltip(pending.tooltip);
   }
@@ -259,11 +258,6 @@ export default function Timeline({
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
-      }
-      if (perfOnRef.current) {
-        moveCountRef.current++;
-        if (pointerXRef.current) pointerTravelRef.current += Math.abs(e.clientX - pointerXRef.current);
-        pointerXRef.current = e.clientX;
       }
       const words = chunksRef.current[drag.fw.chunkIndex].words;
       const dur = safeDurationRef.current;
@@ -286,10 +280,6 @@ export default function Timeline({
         }
         patch = edge === 'left' ? { start: clamped } : { end: clamped };
         tooltipTime = clamped;
-        if (perfOnRef.current) {
-          const held = Math.abs(clamped - t);
-          clampRef.current = held > 0.001 ? `HELD ${held.toFixed(2)}s` : 'free';
-        }
       } else {
         const t = pointerXToTime(e);
         const delta = t - (drag.t0 ?? 0);
@@ -297,12 +287,7 @@ export default function Timeline({
         const minStart = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
         const maxEnd = drag.fw.wordIndex === words.length - 1 ? dur : words[drag.fw.wordIndex + 1].start;
         let newStart = (drag.originalStart ?? 0) + delta;
-        const wanted = newStart;
         newStart = Math.max(minStart, Math.min(maxEnd - wordDur, newStart));
-        if (perfOnRef.current) {
-          const held = Math.abs(newStart - wanted);
-          clampRef.current = held > 0.001 ? `HELD ${held.toFixed(2)}s` : 'free';
-        }
         patch = { start: newStart, end: newStart + wordDur };
         tooltipTime = newStart;
       }
@@ -435,103 +420,8 @@ export default function Timeline({
   function onScrollbarPointerUp() { scrollDragRef.current = null; }
   function onContainerScroll() { userScrolledAt.current = performance.now(); syncScrollThumb(); }
 
-  // ── Drag performance probe — enabled by adding ?perf=1 to the URL ────────────
-  // Frame time is what the browser actually spent; commit time is how much of that
-  // was React re-rendering. Close together means the cost is JavaScript. Frame time
-  // much larger than commit means the cost is layout, paint or compositing instead.
-  const perfOnRef = useRef(false);
-  const commitStartRef = useRef(0);
-  const commitMsRef = useRef(0);
-  // How far the clamp had to pull the pointer back on the last move. When a drag feels
-  // unresponsive while frame time is a steady 60fps, this is the thing to look at.
-  const clampRef = useRef('—');
-  // Pointer events seen since the last report, and where the pointer was last seen.
-  // Comparing that against where the dragged edge actually sits says whether the
-  // block is keeping up, and how many events the browser is delivering.
-  const moveCountRef = useRef(0);
-  const pointerXRef = useRef(0);
-  // Distance travelled by the pointer, and by the edge it is dragging, over the same
-  // window. Every other number here converts through PX_PER_SEC on both sides, so it
-  // agrees with itself even if that conversion is wrong. These two are measured
-  // independently: if the pointer covers far more ground than the edge, the edge is
-  // not following, and the ratio says by how much.
-  const pointerTravelRef = useRef(0);
-  const edgeTravelRef = useRef(0);
-  const lastEdgePxRef = useRef<number | null>(null);
-  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string; rate: number; gap: number; moved: number; tracked: number } | null>(null);
-
-  useEffect(() => {
-    perfOnRef.current = new URLSearchParams(window.location.search).has('perf');
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!perfOnRef.current || !commitStartRef.current) return;
-    commitMsRef.current = performance.now() - commitStartRef.current;
-    commitStartRef.current = 0;
-  });
-
-  useEffect(() => {
-    if (!drag || !perfOnRef.current) return;
-    let raf = 0;
-    let last = performance.now();
-    let samples: number[] = [];
-    const tick = () => {
-      const now = performance.now();
-      samples.push(now - last);
-      last = now;
-      if (samples.length >= 15) {
-        const c = document.querySelector('canvas');
-        const elapsed = samples.reduce((a, b) => a + b, 0);
-        const rate = Math.round((moveCountRef.current / elapsed) * 1000);
-        moveCountRef.current = 0;
-        let gap = 0;
-        const track = trackRef.current;
-        const w = chunksRef.current[drag.fw.chunkIndex]?.words[drag.fw.wordIndex];
-        if (track && w) {
-          const edgeTime = drag.edge === 'right' ? w.end : w.start;
-          const edgePx = track.getBoundingClientRect().left + edgeTime * PX_PER_SEC;
-          gap = pointerXRef.current - edgePx;
-          if (lastEdgePxRef.current !== null) edgeTravelRef.current += Math.abs(edgePx - lastEdgePxRef.current);
-          lastEdgePxRef.current = edgePx;
-        }
-        const moved = Math.round(pointerTravelRef.current);
-        const tracked = Math.round(edgeTravelRef.current);
-        pointerTravelRef.current = 0;
-        edgeTravelRef.current = 0;
-        setPerfStats({
-          rate,
-          gap: Math.round(gap),
-          moved,
-          tracked,
-          avg: samples.reduce((a, b) => a + b, 0) / samples.length,
-          max: Math.max(...samples),
-          commit: commitMsRef.current,
-          canvas: c ? `${c.width}×${c.height}` : '—',
-          clamp: clampRef.current,
-        });
-        samples = [];
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [drag]);
-
   return (
     <div>
-      {perfOnRef.current && perfStats && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 13px/1.5 ui-monospace, monospace', padding: '8px 10px', textAlign: 'left', direction: 'ltr' }}>
-          <div>frame {perfStats.avg.toFixed(1)}ms avg &nbsp; {perfStats.max.toFixed(0)}ms max</div>
-          <div>react {perfStats.commit.toFixed(1)}ms &nbsp; blocks {flatWords.length} &nbsp; canvas {perfStats.canvas}</div>
-          <div style={{ color: perfStats.clamp.startsWith('HELD') ? '#f55' : '#0f0' }}>drag {perfStats.clamp}</div>
-          <div style={{ color: Math.abs(perfStats.gap) > 12 ? '#f55' : '#0f0' }}>
-            pointer {perfStats.rate}/s &nbsp; behind {perfStats.gap}px
-          </div>
-          <div style={{ color: perfStats.moved > 20 && perfStats.tracked < perfStats.moved * 0.7 ? '#f55' : '#0f0' }}>
-            mouse moved {perfStats.moved}px &nbsp; block moved {perfStats.tracked}px
-          </div>
-        </div>
-      )}
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#D4AF37]">
           Timeline

@@ -557,15 +557,22 @@ export default function SubtitleEditor({
 
           <div className="flex flex-col gap-3 md:gap-4 pb-4">
 
-            {transcription.length > 0 && (
-              <button 
-                onClick={() => onExport({ words: transcription, fontFamily, subtitlePos, fontScale, enablePump, wordsPerLine })} 
-                disabled={isExporting} 
-                className={`w-full py-5 rounded-full uppercase tracking-[0.5em] text-[10px] font-black transition-all ${!isExporting ? 'bg-white text-black shadow-[0_0_40px_rgba(255,255,255,0.2)] active:scale-95' : 'bg-white/5 text-white/20'}`}
-              >
-                {isExporting ? `Burning ${exportProgress}%` : 'Export Master'}
-              </button>
-            )}
+            <button
+              onClick={() => onExport({ words: transcription, fontFamily, subtitlePos, fontScale, enablePump, wordsPerLine })}
+              disabled={isExporting || transcription.length === 0}
+              className={`w-full py-5 rounded-full uppercase tracking-[0.5em] text-[10px] font-black transition-all ${!isExporting && transcription.length > 0 ? 'bg-[#D4AF37] text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] active:scale-95' : 'bg-white/5 text-white/20'}`}
+            >
+              {isExporting ? `Burning ${exportProgress}%` : 'Export With Subtitles'}
+            </button>
+
+            {/* Passing no words is what tells the export to skip the drawtext pass */}
+            <button
+              onClick={() => onExport({ words: [], fontFamily, subtitlePos, fontScale, enablePump, wordsPerLine })}
+              disabled={isExporting}
+              className="w-full py-4 rounded-full border border-white/10 uppercase tracking-[0.4em] text-[9px] font-bold text-white/40 hover:bg-white/5 transition-all"
+            >
+              Export Without Subtitles
+            </button>
           </div>
         </div>
       </main>
