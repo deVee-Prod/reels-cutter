@@ -1251,9 +1251,6 @@ export default function ReelsCutterPage() {
 
  <div className="flex justify-center items-center gap-3">
  <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
- {subtitleWords.length > 0 && (
- <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/30 transition-colors">Done Cutting →</button>
- )}
  </div>
  </div>
  )}
@@ -1349,7 +1346,6 @@ export default function ReelsCutterPage() {
 
  <div className="flex justify-center items-center gap-3">
  <span className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/25">Zoom</span>
- <span className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/25">Done Cutting →</span>
  </div>
  </div>
 
@@ -1409,8 +1405,11 @@ export default function ReelsCutterPage() {
  Waiting for Auto Cut...
  </div>
  )}
+ {/* Cutting leads to the subtitle editor, and export lives there, once there is
+  something to preview. Offering it here asked for a decision about subtitles
+  before any had been seen. */}
  {segments && (
- <button onClick={renderVideo} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
+ <button onClick={finishCutting} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Done Cutting →</button>
  )}
  </div>
  </div>
