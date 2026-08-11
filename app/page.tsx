@@ -9,7 +9,8 @@ const FONTS = [
  { id: 'NotoSansHebrewBlack', label: 'Noto Hebrew', file: '/NotoSansHebrew-Black.ttf' },
  { id: 'NotoSansHebrewEB', label: 'Noto HEB XB', file: '/NotoSansHebrew-ExtraBold.ttf' },
  { id: 'RubikBlack', label: 'Rubik Black', file: '/Rubik-Black.ttf' },
- { id: 'Heebo', label: 'Heebo', file: '/Heebo.ttf' },
+ { id: 'HeeboExtraBold', label: 'Heebo XBold', file: '/Heebo-ExtraBold.ttf' },
+ { id: 'Heebo', label: 'Heebo Black', file: '/Heebo.ttf' },
  { id: 'SecularOne', label: 'Secular One', file: '/SecularOne-Regular.ttf' },
  { id: 'VarelaRound', label: 'Varela Round', file: '/VarelaRound-Regular.ttf' },
  { id: 'FrankRuhlLibreBold', label: 'Frank Ruhl', file: '/FrankRuhlLibre-Bold.ttf' },
@@ -97,11 +98,11 @@ export default function ReelsCutterPage() {
  // ── Phase 2: Subtitle Editor (ported from Dubber) ──
  const [cutDone, setCutDone] = useState(false);
  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number; forceBreak?: boolean }[]>([]);
- const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
+ const [fontFamily, setFontFamily] = useState<FontId>('HeeboExtraBold');
  const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
  const [subtitlePos, setSubtitlePos] = useState(15);
  const [fontScale, setFontScale] = useState(0.6);
- const [enablePump, setEnablePump] = useState(true);
+ const [enablePump, setEnablePump] = useState(false);
  const [wordsPerLine, setWordsPerLine] = useState(2);
  const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
  const [canUndo, setCanUndo] = useState(false);
@@ -135,7 +136,7 @@ export default function ReelsCutterPage() {
  const canvasRef = useRef<HTMLCanvasElement>(null);
  const phase2VideoRef = useRef<HTMLVideoElement>(null);
  const subtitlePosRef = useRef(15);
- const fontFamilyRef = useRef<FontId>('NotoSansTight');
+ const fontFamilyRef = useRef<FontId>('HeeboExtraBold');
  const wordsPerLineRef = useRef(2);
  const currentTimeRef = useRef(0);
  const lastDrawnTimeRef = useRef(-1);
@@ -343,7 +344,7 @@ export default function ReelsCutterPage() {
  const borderW = Math.max(2, Math.round(2.4 * (canvas.height / 500)));
 
  ctx.save();
- ctx.font = `900 ${fontSize}px "${fontFamilyRef.current}", sans-serif`;
+ ctx.font = `${fontSize}px "${fontFamilyRef.current}", sans-serif`;
  ctx.textAlign = 'center';
  ctx.textBaseline = 'bottom';
 
