@@ -644,7 +644,13 @@ export default function ReelsCutterPage() {
  }));
  }
 
- setVideoUrl(cutUrl);
+ // Diagnostic: ?src=original hands the editor the uploaded file instead of the
+ // 360p copy ffmpeg just built. The subtitles will not line up with it, which is
+ // fine — the only question this answers is whether dragging is slow because of
+ // the app or because of the file it is playing, the one difference left between
+ // this editor and reels-dubber's.
+ const playOriginal = new URLSearchParams(window.location.search).get('src') === 'original';
+ setVideoUrl(playOriginal && videoUrl ? videoUrl : cutUrl);
  setSubtitleWords(words);
  setCutDone(true);
  setPaused(true);
