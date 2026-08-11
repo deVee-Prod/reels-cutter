@@ -47,104 +47,6 @@ function buildWordGroups<T extends { start: number; end: number; forceBreak?: bo
 
 
 
-// ── Edge refinement ──────────────────────────────────────────────────────────────
-// Whisper decides how many segments there are and roughly where. Its timestamps come
-// from a language model aligning text to audio, not from the waveform, so a boundary
-// can sit most of a second away from the sound it is supposed to mark.
-//
-// This moves each edge onto the moment the sound actually starts and stops, and
-// nothing else. The search for an edge runs as far as the neighbouring segment and
-// no further, so however far an edge travels the structure stays Whisper's. An edge
-// that finds nothing convincing is left exactly where it was, which makes the worst
-// case identical to not running this at all.
-
-const EDGE_FRAME = 0.01;  // 10ms
-const EDGE_PAD_IN = 0.08; // keep the breath before the first sound
-const EDGE_PAD_OUT = 0.12; // and let the last one ring out
-const EDGE_SILENCE_FRAMES = 15; // 150ms below the line ends the run of speech
-
-function refineSegmentEdges(
- segs: { start: number; end: number | null }[],
- channel: Float32Array,
- sampleRate: number,
-): { start: number; end: number | null }[] {
- const hop = Math.max(1, Math.round(sampleRate * EDGE_FRAME));
- // Taken from the samples rather than the video element, which has not necessarily
- // reported its duration by the time this runs.
- const duration = channel.length / sampleRate;
- const frames = Math.floor(channel.length / hop);
- if (segs.length === 0 || frames < 8) return segs;
-
- const db = new Float32Array(frames);
- for (let i = 0; i < frames; i++) {
- let sum = 0;
- const off = i * hop;
- for (let j = 0; j < hop; j++) { const v = channel[off + j]; sum += v * v; }
- db[i] = 10 * Math.log10(sum / hop + 1e-12);
- }
-
- // Threshold drawn from the recording's own levels, so a room with air conditioning
- // in it and a treated one land in different places. Set high on purpose: inside a
- // segment there is speech either way, and what is wanted is the point where it
- // rises unmistakably. The padding gives back what a high line trims.
- const sorted = Float32Array.from(db).sort();
- const pct = (q: number) => sorted[Math.min(frames - 1, Math.max(0, Math.floor(frames * q)))];
- const noiseFloor = pct(0.10);
- const speaking = noiseFloor + Math.max(6, pct(0.95) - noiseFloor) * 0.55;
-
- const frameAt = (t: number) => Math.max(0, Math.min(frames - 1, Math.round(t / EDGE_FRAME)));
- const mid = (seg: { start: number; end: number | null }) => (seg.start + (seg.end ?? duration)) / 2;
-
- return segs.map((seg, i) => {
- // Anchor on the middle of the segment rather than its edges. Whisper's edges are
- // the part it gets wrong; the middle is the part it is confident about, and it is
- // almost certainly inside real speech. Expand outwards from there to the silence
- // on either side, and stop before reaching the neighbour's middle so a segment can
- // never swallow the one beside it however far Whisper was out.
- const lowerLimit = frameAt(i > 0 ? mid(segs[i - 1]) : 0);
- const upperLimit = frameAt(i < segs.length - 1 ? mid(segs[i + 1]) : duration);
-
- // The middle usually lands in speech, but not for the final segment, whose end is
- // open and whose midpoint therefore sits wherever the video happens to stop. When
- // it lands in silence, take the nearest sound within the segment's own bounds
- // instead. A segment with no sound in it at all is left alone.
- let anchor = frameAt(mid(seg));
- if (db[anchor] <= speaking) {
- const lo = frameAt(seg.start);
- const hi = frameAt(seg.end ?? duration);
- let found = -1;
- for (let r = 1; r <= hi - lo; r++) {
- if (anchor - r >= lo && db[anchor - r] > speaking) { found = anchor - r; break; }
- if (anchor + r <= hi && db[anchor + r] > speaking) { found = anchor + r; break; }
- }
- if (found < 0) return seg;
- anchor = found;
- }
-
- let firstLoud = anchor;
- let quiet = 0;
- for (let f = anchor; f >= lowerLimit; f--) {
- if (db[f] > speaking) { firstLoud = f; quiet = 0; }
- else if (++quiet >= EDGE_SILENCE_FRAMES) break;
- }
-
- let lastLoud = anchor;
- quiet = 0;
- for (let f = anchor; f <= upperLimit; f++) {
- if (db[f] > speaking) { lastLoud = f; quiet = 0; }
- else if (++quiet >= EDGE_SILENCE_FRAMES) break;
- }
-
- const start = Math.max(lowerLimit * EDGE_FRAME, firstLoud * EDGE_FRAME - EDGE_PAD_IN);
- const end = seg.end === null
- ? null
- : Math.min(upperLimit * EDGE_FRAME, lastLoud * EDGE_FRAME + EDGE_PAD_OUT);
-
- if (end !== null && end - start < 0.12) return seg;
- return { start: Number(start.toFixed(3)), end: end === null ? null : Number(end.toFixed(3)) };
- });
-}
-
 function remapToExportTime(
  t: number,
  segs: { start: number; end: number | null }[],
@@ -664,8 +566,8 @@ export default function ReelsCutterPage() {
  form.append('video', audioBlob, 'audio.mp3');
  const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
 
- // Decoded once, for the waveform and for refining the segment edges Whisper returns
- const audioPromise = (async () => {
+ // Generate waveform in parallel
+ (async () => {
  try {
  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
  const actx = new AudioCtx();
@@ -685,8 +587,7 @@ export default function ReelsCutterPage() {
  wctx.fillRect(i, (H - h) / 2, 1, h);
  }
  setWaveformBg(wc.toDataURL());
- return { channel: ch, sampleRate: decoded.sampleRate };
- } catch { return null; /* both the waveform and the refinement are optional */ }
+ } catch { /* waveform is optional */ }
  })();
  setStatus("Creating preview...");
  await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
@@ -697,16 +598,12 @@ export default function ReelsCutterPage() {
  const data = await res.json();
  
  if (data.segments) {
- const audio = await audioPromise;
- const segs = audio
- ? refineSegmentEdges(data.segments, audio.channel, audio.sampleRate)
- : data.segments;
- setSegments(segs);
+ setSegments(data.segments);
  if (data.words) setSubtitleWords(data.words);
  
  setStatus("Preparing edit...");
  setProgress(0);
- await warmupSegments(segs);
+ await warmupSegments(data.segments);
  setStatus("Review Edit");
  }
  } catch (e) {
