@@ -833,9 +833,6 @@ export default function ReelsCutterPage() {
  if (!authorized) {
  return (
  <div className="min-h-[100dvh] flex flex-col items-center text-center">
- {dbg && (
- <pre style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, margin: 0, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 12px/1.45 ui-monospace, monospace', padding: '6px 8px', textAlign: 'left', direction: 'ltr', whiteSpace: 'pre-wrap' }}>{dbg}</pre>
- )}
  <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
  <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
  <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
@@ -883,6 +880,9 @@ export default function ReelsCutterPage() {
  // ═══════════════════════════════════════════════════════════════════
  return (
  <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden ">
+ {dbg && (
+ <pre style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, margin: 0, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 12px/1.45 ui-monospace, monospace', padding: '6px 8px', textAlign: 'left', direction: 'ltr', whiteSpace: 'pre-wrap' }}>{dbg}</pre>
+ )}
  <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
  <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
  <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
