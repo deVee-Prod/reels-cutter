@@ -1312,6 +1312,47 @@ export default function ReelsCutterPage() {
 
  {!segments && !videoFile && (
  <>
+ {/* A still likeness of the cut panel, shown only on the empty screen so the tool
+  looks like itself before a file is chosen. Deliberately markup and nothing
+  else — no refs, no handlers, no state — and it unmounts the moment a file is
+  picked, at which point the real panel takes over. */}
+ <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6 pointer-events-none select-none opacity-40">
+ <div className="flex items-center justify-between px-0.5">
+ <div className="flex items-center gap-2">
+ <span className="text-white/25 text-[7px] uppercase tracking-[0.2em]">Edit</span>
+ <span className="px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase flex items-center gap-1.5 bg-white/[0.04] text-white/20">
+ <span className="text-[11px]">↩️</span> UNDO
+ </span>
+ <span className="px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase flex items-center gap-1.5 bg-white/[0.04] text-white/20">
+ <span className="text-[11px]">✂️</span> SPLIT
+ </span>
+ </div>
+ <div className="flex items-center gap-2">
+ <span className="w-7 h-7 flex items-center justify-center bg-white/[0.04] border border-white/[0.07] rounded-lg text-white/30 text-sm">−</span>
+ <span className="text-white/25 text-[8px] font-mono w-6 text-center">1×</span>
+ <span className="w-7 h-7 flex items-center justify-center bg-white/[0.04] border border-white/[0.07] rounded-lg text-white/30 text-sm">+</span>
+ </div>
+ </div>
+
+ <div className="relative h-20 md:h-14 bg-white/[0.03] border border-white/10 rounded-xl" />
+
+ <div className="relative w-full h-10 md:h-6 flex items-center">
+ <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full" />
+ </div>
+
+ <div className="flex justify-center items-center gap-3">
+ <span className="w-9 h-9 flex items-center justify-center bg-white/[0.04] border border-white/[0.06] rounded-lg text-white/30">
+ <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" /><path d="M12 2.5v9L5 7l7-4.5z" fill="currentColor" /></svg>
+ </span>
+ <span className="px-6 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-[9px] uppercase tracking-widest text-white/30">Play</span>
+ </div>
+
+ <div className="flex justify-center items-center gap-3">
+ <span className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/25">Zoom</span>
+ <span className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-white/[0.04] border-white/[0.07] text-white/25">Done Cutting →</span>
+ </div>
+ </div>
+
  {/* Auto Zoom Settings */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
  <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Auto Zoom</span>
