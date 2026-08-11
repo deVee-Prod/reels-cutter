@@ -740,10 +740,11 @@ export default function ReelsCutterPage() {
  // not survive as subtitles. remapToExportTime collapses everything outside a kept
  // segment onto a single instant, which used to leave them as unreadable slivers
  // pinned at the 0.05s floor — captions for words the video no longer says.
- const survivesCut = (w: { start: number; end: number }) => {
- const mid = (w.start + w.end) / 2;
- return segments.some(s => mid >= s.start && mid <= (s.end ?? duration));
- };
+ // Deliberately lenient: any overlap at all keeps the word. Half a word still
+ // reaches the viewer's ears, so it should still be captioned — only words that
+ // fall entirely inside a removed stretch are dropped.
+ const survivesCut = (w: { start: number; end: number }) =>
+ segments.some(s => w.end > s.start && w.start < (s.end ?? duration));
  const remapped = subtitleWords.filter(survivesCut).map(w => ({
  ...w,
  start: Number(remapToExportTime(w.start, segments, duration).toFixed(3)),
