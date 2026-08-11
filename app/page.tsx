@@ -1359,59 +1359,6 @@ export default function ReelsCutterPage() {
  {/* Auto Zoom, subtitle sizing and Cut Video have nothing to apply to before a file
   exists, so they appear with the upload and stay through the analysis. The still
   panel above belongs to the empty screen and stops there. */}
- {videoFile && !segments && (
- <>
- {/* Auto Zoom Settings */}
- <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Auto Zoom</span>
- <div className="flex-1 flex items-center gap-2">
- <button onClick={() => setZoomPerCut(p => !p)} className={`px-4 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>
- {zoomPerCut ? 'ON' : 'OFF'}
- </button>
- {zoomPerCut && (
- <>
- <button onClick={() => setZoomFreq(1)} className={`px-4 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 1 ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Fast</button>
- <button onClick={() => setZoomFreq(4)} className={`px-4 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomFreq === 4 ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Subtle</button>
- </>
- )}
- </div>
- </div>
-
- {/* Subtitle Size & Pump */}
- <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Size</span>
- <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
- <button
- onClick={() => setEnablePump(p => !p)}
- className={`ml-2 px-3 py-1.5 rounded-lg text-[8px] uppercase tracking-widest font-bold transition-all ${enablePump ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30' : 'bg-white/5 text-white/30 border border-white/5'}`}
- >
- Pump {enablePump ? 'ON' : 'OFF'}
- </button>
- </div>
-
- {/* Words per line */}
- <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
- <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Words/Line</span>
- <div className="flex-1 flex items-center justify-center gap-1.5">
- {[1, 2, 3, 4, 5].map((n) => (
- <button
- key={n}
- onClick={() => setWordsPerLine(n)}
- className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
- wordsPerLine === n
- ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
- : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
- }`}
- >
- {n}
- </button>
- ))}
- </div>
- </div>
-
- <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-2 mb-6" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
- </>
- )}
  {!segments && videoFile && (
  <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
  Waiting for Auto Cut...
