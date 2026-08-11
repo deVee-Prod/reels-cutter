@@ -281,6 +281,10 @@ export default function Timeline({
         }
         patch = edge === 'left' ? { start: clamped } : { end: clamped };
         tooltipTime = clamped;
+        if (perfOnRef.current) {
+          const held = Math.abs(clamped - t);
+          clampRef.current = held > 0.001 ? `HELD ${held.toFixed(2)}s` : 'free';
+        }
       } else {
         const t = pointerXToTime(e);
         const delta = t - (drag.t0 ?? 0);
@@ -288,7 +292,12 @@ export default function Timeline({
         const minStart = drag.fw.wordIndex === 0 ? 0 : words[drag.fw.wordIndex - 1].end;
         const maxEnd = drag.fw.wordIndex === words.length - 1 ? dur : words[drag.fw.wordIndex + 1].start;
         let newStart = (drag.originalStart ?? 0) + delta;
+        const wanted = newStart;
         newStart = Math.max(minStart, Math.min(maxEnd - wordDur, newStart));
+        if (perfOnRef.current) {
+          const held = Math.abs(newStart - wanted);
+          clampRef.current = held > 0.001 ? `HELD ${held.toFixed(2)}s` : 'free';
+        }
         patch = { start: newStart, end: newStart + wordDur };
         tooltipTime = newStart;
       }
@@ -428,7 +437,10 @@ export default function Timeline({
   const perfOnRef = useRef(false);
   const commitStartRef = useRef(0);
   const commitMsRef = useRef(0);
-  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string } | null>(null);
+  // How far the clamp had to pull the pointer back on the last move. When a drag feels
+  // unresponsive while frame time is a steady 60fps, this is the thing to look at.
+  const clampRef = useRef('—');
+  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string } | null>(null);
 
   useEffect(() => {
     perfOnRef.current = new URLSearchParams(window.location.search).has('perf');
@@ -455,7 +467,8 @@ export default function Timeline({
           avg: samples.reduce((a, b) => a + b, 0) / samples.length,
           max: Math.max(...samples),
           commit: commitMsRef.current,
-          canvas: c ? `${c.width}\u00d7${c.height}` : '\u2014',
+          canvas: c ? `${c.width}×${c.height}` : '—',
+          clamp: clampRef.current,
         });
         samples = [];
       }
@@ -471,6 +484,7 @@ export default function Timeline({
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 13px/1.5 ui-monospace, monospace', padding: '8px 10px', textAlign: 'left', direction: 'ltr' }}>
           <div>frame {perfStats.avg.toFixed(1)}ms avg &nbsp; {perfStats.max.toFixed(0)}ms max</div>
           <div>react {perfStats.commit.toFixed(1)}ms &nbsp; blocks {flatWords.length} &nbsp; canvas {perfStats.canvas}</div>
+          <div style={{ color: perfStats.clamp.startsWith('HELD') ? '#f55' : '#0f0' }}>drag {perfStats.clamp}</div>
         </div>
       )}
       <div className="mb-2 flex items-baseline justify-between">
