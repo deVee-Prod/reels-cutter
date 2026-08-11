@@ -735,8 +735,16 @@ export default function ReelsCutterPage() {
  const cutData = await ffmpegRef.current.readFile('cut_preview.mp4');
  const cutUrl = URL.createObjectURL(new Blob([(cutData as any).buffer], { type: 'video/mp4' }));
 
- // Remap subtitle timestamps to cut timeline
- const remapped = subtitleWords.map(w => ({
+ // Remap subtitle timestamps to cut timeline.
+ // Words spoken inside a removed stretch have had their audio deleted, so they must
+ // not survive as subtitles. remapToExportTime collapses everything outside a kept
+ // segment onto a single instant, which used to leave them as unreadable slivers
+ // pinned at the 0.05s floor — captions for words the video no longer says.
+ const survivesCut = (w: { start: number; end: number }) => {
+ const mid = (w.start + w.end) / 2;
+ return segments.some(s => mid >= s.start && mid <= (s.end ?? duration));
+ };
+ const remapped = subtitleWords.filter(survivesCut).map(w => ({
  ...w,
  start: Number(remapToExportTime(w.start, segments, duration).toFixed(3)),
  end: Number(Math.max(
