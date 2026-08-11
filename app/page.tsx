@@ -171,9 +171,6 @@ export default function ReelsCutterPage() {
  // ── Phase 2: Subtitle Editor (ported from Dubber) ──
  const [cutDone, setCutDone] = useState(false);
  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number; forceBreak?: boolean }[]>([]);
- // Silence detection, adjustable from the cut screen
- const [cutSensitivity, setCutSensitivity] = useState(CUT_SENSITIVITY);
- const [minSilence, setMinSilence] = useState(SILENCE_MIN_GAP);
  const [canUndoCut, setCanUndoCut] = useState(false);
  const [isExporting, setIsExporting] = useState(false);
  const [exportProgress, setExportProgress] = useState(0);
@@ -192,10 +189,6 @@ export default function ReelsCutterPage() {
  const programmaticSeekRef = useRef(false);
  // What the loop last did at a segment boundary, for the ?debug=1 readout
  const lastEventRef = useRef('—');
- // Decoded samples are kept so the sliders can re-cut instantly, without decoding
- // the audio again and without going near the network.
- const audioChannelRef = useRef<Float32Array | null>(null);
- const sampleRateRef = useRef(16000);
  const warmingUpRef = useRef(false);
  const seekBarRef = useRef<HTMLDivElement>(null);
  const seekDraggingRef = useRef(false);
@@ -228,6 +221,12 @@ export default function ReelsCutterPage() {
  // ── Sync refs ──
  useEffect(() => { segmentsRef.current = segments; }, [segments]);
  useEffect(() => { durationRef.current = duration; }, [duration]);
+ // Each blob URL pins its blob in memory until it is revoked. Three are created per
+ // video here, and none of them used to be released.
+ useEffect(() => {
+ const url = videoUrl;
+ return () => { if (url?.startsWith('blob:')) URL.revokeObjectURL(url); };
+ }, [videoUrl]);
  // The cut-review videos unmount when the subtitle editor takes over, so their
  // onPause never fires and nothing else ever stopped this loop — it kept asking for
  // frames just to return early on every one of them. Stop it at the transition.
@@ -516,9 +515,7 @@ export default function ReelsCutterPage() {
  actx.close();
  const ch = decoded.getChannelData(0);
 
- audioChannelRef.current = ch;
- sampleRateRef.current = decoded.sampleRate;
- detected = detectSpeechSegments(ch, decoded.sampleRate, minSilence, cutSensitivity);
+ detected = detectSpeechSegments(ch, decoded.sampleRate, SILENCE_MIN_GAP, CUT_SENSITIVITY);
 
  const W = 1200, H = 56;
  const wc = document.createElement('canvas');
@@ -541,6 +538,14 @@ export default function ReelsCutterPage() {
  // playing while it decodes nothing.
  await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
  const previewData = await ffmpeg.readFile('preview.mp4');
+
+ // ffmpeg.wasm's filesystem is the browser's own memory. The source video and the
+ // extracted audio have both been consumed by now, and renderVideo writes the
+ // source again for itself, so holding them through the whole editing session only
+ // starves the video decoder — which on iOS shows up as playback that reports
+ // itself as running and never produces a frame.
+ await ffmpeg.deleteFile('input.mov').catch(() => {});
+ await ffmpeg.deleteFile('whisper.mp3').catch(() => {});
  setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
 
  const segs = detected ?? [{ start: 0, end: null }];
@@ -556,17 +561,6 @@ export default function ReelsCutterPage() {
  setProcessing(false);
  }
  };
-
- // Re-cut as the sliders move. Detection is pure arithmetic over samples already in
- // memory, so this lands in the same frame the slider does.
- useEffect(() => {
- const ch = audioChannelRef.current;
- if (!ch || cutDone) return;
- setSegments(detectSpeechSegments(ch, sampleRateRef.current, minSilence, cutSensitivity));
- cutHistoryRef.current = [];
- setCanUndoCut(false);
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [cutSensitivity, minSilence]);
 
  // ── Transition: Phase 1 → Phase 2 ──
  const finishCutting = async () => {
@@ -596,6 +590,7 @@ export default function ReelsCutterPage() {
  ]);
 
  const cutData = await ffmpegRef.current.readFile('cut_preview.mp4');
+ await ffmpegRef.current.deleteFile('preview.mp4').catch(() => {});
  const cutUrl = URL.createObjectURL(new Blob([(cutData as any).buffer], { type: 'video/mp4' }));
 
  // Ask Whisper about the video that now exists, rather than calculating what it
@@ -618,6 +613,7 @@ export default function ReelsCutterPage() {
  if (Array.isArray(data.words) && data.words.length > 0) words = data.words;
  }
  await ffmpegRef.current.deleteFile('cut_audio.mp3').catch(() => {});
+ await ffmpegRef.current.deleteFile('cut_preview.mp4').catch(() => {});
  } catch {
  // Fall through to the remap below — a failed transcription must not cost the cut
  }
@@ -730,6 +726,8 @@ export default function ReelsCutterPage() {
 
  const url = URL.createObjectURL(new Blob([(await ffmpegRef.current.readFile('out.mp4') as any).buffer], { type: 'video/mp4' }));
  const a = document.createElement('a'); a.href = url; a.download = `deVee_${videoFile.name}.mp4`; a.click();
+ await ffmpegRef.current.deleteFile('input.mov').catch(() => {});
+ await ffmpegRef.current.deleteFile('out.mp4').catch(() => {});
  setStatus("Done!");
  } catch (e) { setStatus("Error"); } finally { setIsExporting(false); setExportProgress(0); }
  };
