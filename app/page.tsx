@@ -124,6 +124,11 @@ export default function ReelsCutterPage() {
  const programmaticSeekRef = useRef(false);
  // Segment index the idle <video> is currently parked one step ahead of (-1 = nothing parked)
  const prerolledIdxRef = useRef(-1);
+ // Time the idle element has genuinely finished seeking to, taken from its 'seeked'
+ // event. Reading currentTime instead is unreliable on iOS — it reports the target
+ // before the decoder has caught up, so a swap could hand over a frame that is not
+ // ready and the picture hitches anyway.
+ const parkedTimeRef = useRef<number | null>(null);
  const warmingUpRef = useRef(false);
  const seekBarRef = useRef<HTMLDivElement>(null);
  const seekDraggingRef = useRef(false);
@@ -251,7 +256,13 @@ export default function ReelsCutterPage() {
  const bv = getBV();
  if (!bv) return;
  if (!bv.paused) bv.pause();
- if (Math.abs(bv.currentTime - time) > 0.05) bv.currentTime = time;
+ parkedTimeRef.current = null;
+ if (bv.readyState >= 2 && Math.abs(bv.currentTime - time) < 0.02) {
+ parkedTimeRef.current = time;
+ return;
+ }
+ bv.addEventListener('seeked', () => { parkedTimeRef.current = time; }, { once: true });
+ bv.currentTime = time;
  };
 
  /** Hand playback to the idle element, already sitting on this segment's start:
@@ -262,7 +273,8 @@ export default function ReelsCutterPage() {
  const seg = segs[segIdx];
  const cur = getAV();
  const nxt = getBV();
- const parked = !!nxt && nxt.readyState >= 2 && Math.abs(nxt.currentTime - seg.start) < 0.12;
+ const parked = !!nxt && nxt.readyState >= 2 && parkedTimeRef.current !== null
+ && Math.abs(parkedTimeRef.current - seg.start) < 0.02;
 
  if (!cur || !nxt || !parked) { seekActiveTo(seg.start); return; }
 
@@ -659,7 +671,11 @@ export default function ReelsCutterPage() {
  } catch { /* waveform is optional */ }
  })();
  setStatus("Creating preview...");
- await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
+ // -g 5: a seek has to decode forward from the previous keyframe, so the gap between
+ // keyframes is the cost of every jump between segments. Five frames instead of
+ // fifteen makes that roughly three times cheaper, at the price of a bigger preview
+ // file that never leaves the browser anyway.
+ await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '5', '-keyint_min', '5', '-c:a', 'copy', 'preview.mp4']);
  const previewData = await ffmpeg.readFile('preview.mp4');
  setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
  setStatus("Whisper is analyzing...");
@@ -702,6 +718,10 @@ export default function ReelsCutterPage() {
  '-filter_complex', f,
  '-map', '[outv]', '-map', '[outa]',
  '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+ // Without this the encoder defaults to a keyframe every 250 frames, which makes
+ // scrubbing the subtitle editor's seek bar decode up to eight seconds of video
+ // for a single frame.
+ '-g', '5', '-keyint_min', '5',
  'cut_preview.mp4',
  ]);
 
