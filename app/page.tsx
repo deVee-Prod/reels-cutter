@@ -339,6 +339,9 @@ export default function ReelsCutterPage() {
  // a flag left up stops the loop for the rest of the session, which looks like
  // playback ignoring the segments entirely. Lower them on any pointer release,
  // wherever it lands.
+ // Only pointerup ends a drag. Safari fires pointercancel while a touch is still
+ // down whenever it reconsiders the gesture, and clearing the flag there killed
+ // drags before they began — the timeline simply stopped responding.
  const releaseDrags = () => {
  const wasDragging = draggingRef.current !== null || seekDraggingRef.current;
  draggingRef.current = null;
@@ -348,11 +351,7 @@ export default function ReelsCutterPage() {
  if (av && !av.paused) startLoop();
  };
  window.addEventListener('pointerup', releaseDrags);
- window.addEventListener('pointercancel', releaseDrags);
- return () => {
- window.removeEventListener('pointerup', releaseDrags);
- window.removeEventListener('pointercancel', releaseDrags);
- };
+ return () => window.removeEventListener('pointerup', releaseDrags);
  }, []);
 
  const handleTimeUpdate = () => {
@@ -537,11 +536,10 @@ export default function ReelsCutterPage() {
  } catch { /* fall back to one uncut segment below */ }
 
  setStatus("Creating preview...");
- // -g 5: a seek has to decode forward from the previous keyframe, so the gap between
- // keyframes is the cost of every jump between segments. Five frames instead of
- // fifteen makes that roughly three times cheaper, at the price of a bigger preview
- // file that never leaves the browser anyway.
- await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '5', '-keyint_min', '5', '-c:a', 'copy', 'preview.mp4']);
+ // -g 15, as it always was. Five made seeks cheaper and the file several times
+ // heavier, and a heavy blob is exactly what leaves an iPhone reporting a video as
+ // playing while it decodes nothing.
+ await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
  const previewData = await ffmpeg.readFile('preview.mp4');
  setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
 
