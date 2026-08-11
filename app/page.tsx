@@ -1,124 +1,50 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import SubtitleEditor, { FONTS, buildWordGroups, type SubtitleStyle } from './components/SubtitleEditor';
+import Timeline from './components/Timeline';
 
+const FONTS = [
+ { id: 'NotoSansTight', label: 'Noto Tight', file: '/NotoSansTight.ttf' },
+ { id: 'NotoSansHebrewBlack', label: 'Noto Hebrew', file: '/NotoSansHebrew-Black.ttf' },
+ { id: 'NotoSansHebrewEB', label: 'Noto HEB XB', file: '/NotoSansHebrew-ExtraBold.ttf' },
+ { id: 'RubikBlack', label: 'Rubik Black', file: '/Rubik-Black.ttf' },
+ { id: 'Heebo', label: 'Heebo', file: '/Heebo.ttf' },
+ { id: 'SecularOne', label: 'Secular One', file: '/SecularOne-Regular.ttf' },
+ { id: 'VarelaRound', label: 'Varela Round', file: '/VarelaRound-Regular.ttf' },
+ { id: 'FrankRuhlLibreBold', label: 'Frank Ruhl', file: '/FrankRuhlLibre-Bold.ttf' },
+] as const;
+type FontId = typeof FONTS[number]['id'];
 
+// Canvas preview scale — higher to counteract 360p base video and render crisp text
+const PREVIEW_SCALE_DESKTOP = 3.0; // 360p * 3 = 1080p canvas
+const PREVIEW_SCALE_MOBILE = 3.0; // 360p * 3 = 1080p canvas
 
+// Gap threshold — if silence between two words >= this, force a group break
+const GAP_BREAK_THRESHOLD = 0.5;
 
-// Shortest silence worth cutting out. Below roughly a fifth of a second a gap is the
-// pause inside a sentence rather than between two of them, and removing it makes
-// speech sound clipped.
-const SILENCE_MIN_GAP = 0.25;
-// 0 keeps everything but the deepest silence, 1 cuts anything that is not clearly
-// louder than the room. Mid-scale suits a phone recorded indoors.
-const CUT_SENSITIVITY = 0.5;
-
-
-
-
-// ── Silence detection ───────────────────────────────────────────────────────────
-// Whisper is a transcription model. Its word timestamps are alignment estimates, not
-// measurements of when sound starts and stops, and they are least reliable at exactly
-// the boundaries a cut lands on. The decoded samples are already in memory here for
-// the waveform, so measure the audio instead of asking a language model about it.
-
-const FRAME_SEC = 0.01; // 10ms hop — fine enough to land a cut inside a consonant
-const PAD_IN = 0.08;    // keep a breath before the first sound of a segment
-const PAD_OUT = 0.12;   // and let the tail of the last word ring out
-
-/** Speech/silence segmentation by adaptive energy gating.
- *
- *  The threshold is derived from the recording's own level distribution rather than
- *  fixed in advance: the quiet end of the distribution is this room's noise floor and
- *  the loud end is this person's voice, so a room with air conditioning in it lands on
- *  a different threshold than a treated one without anybody having to touch a dial.
- *
- *  Two thresholds, not one. Sound has to clear the higher one to open a segment and
- *  stay under the lower one to close it, so level wobbling across a single line cannot
- *  shred the audio into fragments. */
-function detectSpeechSegments(
- channel: Float32Array,
- sampleRate: number,
- minSilence: number,
- sensitivity: number,
-): { start: number; end: number | null }[] {
- const hop = Math.max(1, Math.round(sampleRate * FRAME_SEC));
- const win = hop * 2;
- const frameCount = Math.floor((channel.length - win) / hop);
- if (frameCount <= 2) return [{ start: 0, end: null }];
-
- const db = new Float32Array(frameCount);
- for (let i = 0; i < frameCount; i++) {
- let sum = 0;
- const off = i * hop;
- for (let j = 0; j < win; j++) {
- const s = channel[off + j];
- sum += s * s;
- }
- db[i] = 10 * Math.log10(sum / win + 1e-12);
- }
-
- const sorted = Float32Array.from(db).sort();
- const percentile = (p: number) =>
- sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)))];
- const noiseFloor = percentile(0.10);
- const speechLevel = percentile(0.95);
- const range = Math.max(6, speechLevel - noiseFloor);
-
- const openAt = noiseFloor + range * (0.25 + 0.35 * sensitivity);
- const closeAt = noiseFloor + range * (0.15 + 0.25 * sensitivity);
-
- const minSilenceFrames = Math.max(1, Math.round(minSilence / FRAME_SEC));
- const minSegment = 0.12;
-
- const found: { start: number; end: number | null }[] = [];
- let inSpeech = false;
- let segStart = 0;
- let quietRun = 0;
- let loudRun = 0;
-
- for (let i = 0; i < frameCount; i++) {
- const t = i * FRAME_SEC;
- if (!inSpeech) {
- if (db[i] > openAt) {
- loudRun++;
- // Two frames above the line, so a single click or lip smack cannot open a segment
- if (loudRun >= 2) {
- inSpeech = true;
- segStart = Math.max(0, t - loudRun * FRAME_SEC - PAD_IN);
- quietRun = 0;
- }
+/** Group words into lines of *up to* `maxPerLine` words.
+ * A new group starts whenever:
+ * 1. The current group already has `maxPerLine` words, OR
+ * 2. The gap between the previous word's end and the next word's start >= GAP_BREAK_THRESHOLD
+ * 3. The word has forceBreak flag */
+function buildWordGroups<T extends { start: number; end: number; forceBreak?: boolean }>(words: T[], maxPerLine: number): T[][] {
+ if (words.length === 0) return [];
+ const groups: T[][] = [[words[0]]];
+ for (let i = 1; i < words.length; i++) {
+ const current = groups[groups.length - 1];
+ const prev = words[i - 1];
+ const gap = words[i].start - prev.end;
+ if (current.length >= maxPerLine || gap >= GAP_BREAK_THRESHOLD || words[i].forceBreak) {
+ groups.push([words[i]]);
  } else {
- loudRun = 0;
- }
- } else if (db[i] < closeAt) {
- quietRun++;
- if (quietRun >= minSilenceFrames) {
- const end = t - quietRun * FRAME_SEC + PAD_OUT;
- if (end - segStart >= minSegment) found.push({ start: segStart, end });
- inSpeech = false;
- loudRun = 0;
- quietRun = 0;
- }
- } else {
- quietRun = 0;
+ current.push(words[i]);
  }
  }
- if (inSpeech) found.push({ start: segStart, end: null });
- if (found.length === 0) return [{ start: 0, end: null }];
-
- // Padding can push two segments into each other; fold those back together
- const merged: { start: number; end: number | null }[] = [];
- for (const seg of found) {
- const prev = merged[merged.length - 1];
- if (prev && prev.end !== null && seg.start <= prev.end) prev.end = seg.end;
- else merged.push({ ...seg });
- }
- merged[merged.length - 1].end = null; // run the last segment to the end of the video
- return merged;
+ return groups;
 }
+
+
 
 function remapToExportTime(
  t: number,
@@ -171,6 +97,14 @@ export default function ReelsCutterPage() {
  // ── Phase 2: Subtitle Editor (ported from Dubber) ──
  const [cutDone, setCutDone] = useState(false);
  const [subtitleWords, setSubtitleWords] = useState<{ word: string; start: number; end: number; forceBreak?: boolean }[]>([]);
+ const [fontFamily, setFontFamily] = useState<FontId>('NotoSansTight');
+ const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
+ const [subtitlePos, setSubtitlePos] = useState(15);
+ const [fontScale, setFontScale] = useState(0.6);
+ const [enablePump, setEnablePump] = useState(true);
+ const [wordsPerLine, setWordsPerLine] = useState(2);
+ const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
+ const [canUndo, setCanUndo] = useState(false);
  const [canUndoCut, setCanUndoCut] = useState(false);
  const [isExporting, setIsExporting] = useState(false);
  const [exportProgress, setExportProgress] = useState(0);
@@ -187,20 +121,54 @@ export default function ReelsCutterPage() {
  const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
  const durationRef = useRef<number>(0);
  const programmaticSeekRef = useRef(false);
- // What the loop last did at a segment boundary, for the ?debug=1 readout
- const lastEventRef = useRef('—');
  const warmingUpRef = useRef(false);
  const seekBarRef = useRef<HTMLDivElement>(null);
  const seekDraggingRef = useRef(false);
  const cutDoneRef = useRef(false);
+ const origVideoUrlRef = useRef<string | null>(null);
+ const origSubtitleWordsRef = useRef<{ word: string; start: number; end: number }[]>([]);
  const origVideoWidthRef = useRef(0);
  const origWidthCapturedRef = useRef(false);
  const hasAutoAnalyzed = useRef(false);
 
+ // Phase 2 refs (ported from Dubber)
+ const canvasRef = useRef<HTMLCanvasElement>(null);
+ const phase2VideoRef = useRef<HTMLVideoElement>(null);
+ const subtitlePosRef = useRef(15);
+ const fontFamilyRef = useRef<FontId>('NotoSansTight');
+ const wordsPerLineRef = useRef(2);
  const currentTimeRef = useRef(0);
+ const lastDrawnTimeRef = useRef(-1);
+ const historyRef = useRef<any[][]>([]);
  const cutHistoryRef = useRef<any[][]>([]);
+ const syncAndDrawRef = useRef<() => void>(() => {});
+ const togglePlayRef = useRef<() => Promise<void>>(async () => {});
+ const lastUIUpdateRef = useRef(0);
+ const lastDrawTimeMsRef = useRef(0);
+ const previewScaleRef = useRef(
+ typeof window !== 'undefined' && window.innerWidth < 768
+ ? PREVIEW_SCALE_MOBILE
+ : PREVIEW_SCALE_DESKTOP
+ );
 
+ // Stable Timeline callbacks
+ const getTimeCallback = useCallback(() => currentTimeRef.current, []);
+ const isPlayingCallback = useCallback(() => !!(phase2VideoRef.current && !phase2VideoRef.current.paused), []);
 
+ // ── Undo system ──
+ function pushHistory(snapshot: any[]) {
+ historyRef.current = [...historyRef.current.slice(-29), [...snapshot]];
+ setCanUndo(true);
+ }
+
+ const handleUndo = useCallback(() => {
+ const h = historyRef.current;
+ if (h.length === 0) return;
+ const prev = h[h.length - 1];
+ historyRef.current = h.slice(0, -1);
+ setSubtitleWords(prev);
+ setCanUndo(h.length > 1);
+ }, []);
 
  // ── Auth checks ──
  useEffect(() => {
@@ -221,17 +189,18 @@ export default function ReelsCutterPage() {
  // ── Sync refs ──
  useEffect(() => { segmentsRef.current = segments; }, [segments]);
  useEffect(() => { durationRef.current = duration; }, [duration]);
- // Each blob URL pins its blob in memory until it is revoked. Three are created per
- // video here, and none of them used to be released.
- useEffect(() => {
- const url = videoUrl;
- return () => { if (url?.startsWith('blob:')) URL.revokeObjectURL(url); };
- }, [videoUrl]);
- // The cut-review videos unmount when the subtitle editor takes over, so their
- // onPause never fires and nothing else ever stopped this loop — it kept asking for
- // frames just to return early on every one of them. Stop it at the transition.
- useEffect(() => { cutDoneRef.current = cutDone; if (cutDone) stopLoop(); }, [cutDone]);
+ useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
+ useEffect(() => { fontFamilyRef.current = fontFamily; }, [fontFamily]);
+ useEffect(() => { subtitlePosRef.current = subtitlePos; }, [subtitlePos]);
+ useEffect(() => { wordsPerLineRef.current = wordsPerLine; }, [wordsPerLine]);
 
+ // ── Load fonts ──
+ useEffect(() => {
+ FONTS.forEach(({ id, file }) => {
+ const font = new FontFace(id, `url(${file})`);
+ font.load().then(f => { document.fonts.add(f); setLoadedFonts(prev => new Set([...prev, id])); }).catch(() => {});
+ });
+ }, []);
 
  // ── Cleanup RAF ──
  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
@@ -243,37 +212,14 @@ export default function ReelsCutterPage() {
  const c = timelineContainerRef.current;
  if (!c || zoom <= 1 || !duration) return;
  const cw = c.clientWidth;
- const ph = (currentTime / (duration || 1)) * cw * zoom;
+ const ph = (currentTime / duration) * cw * zoom;
  if (ph < c.scrollLeft + 40 || ph > c.scrollLeft + cw - 40)
  c.scrollLeft = Math.max(0, ph - cw * 0.25);
  }, [currentTime, zoom, duration, cutDone]);
 
- // Playback state readout — add ?debug=1 to the URL. Every condition that can stop
- // the segment loop lives in a ref, so none of it appears in React DevTools or in
- // any number measured so far. Sampling them onto the screen says which one is up.
- const [dbg, setDbg] = useState<string | null>(null);
- useEffect(() => {
- if (!new URLSearchParams(window.location.search).has('debug')) return;
- const id = setInterval(() => {
- const v = activeIsARef.current ? videoARef.current : videoBRef.current;
- const segs = segmentsRef.current;
- setDbg(
- `loop ${rafRef.current !== null ? 'ON' : 'off'} \u00b7 segs ${segs?.length ?? 0}` +
- `${segs?.[0] ? ` \u00b7 first ${segs[0].start.toFixed(2)}s` : ''}\n` +
- `video ${v ? (v.paused ? 'paused' : 'PLAYING') : 'none'} \u00b7 t ${(v?.currentTime ?? 0).toFixed(2)}` +
- ` \u00b7 ready ${v?.readyState ?? '-'}\n` +
- `warmup ${warmingUpRef.current ? 'YES' : 'no'} \u00b7 drag ${draggingRef.current ? 'YES' : 'no'}` +
- ` \u00b7 seek ${seekDraggingRef.current ? 'YES' : 'no'}\n` +
- `in seg ${segs && v ? segs.findIndex(x => v.currentTime >= x.start - 0.1 && v.currentTime <= (x.end ?? durationRef.current)) : '-'}` +
- ` \u00b7 ends ${(() => { const x = segs?.find(x => v && v.currentTime >= x.start - 0.1 && v.currentTime <= (x.end ?? durationRef.current)); return x ? (x.end?.toFixed(2) ?? 'END') : '-'; })()}` +
- ` \u00b7 dur ${durationRef.current.toFixed(1)} \u00b7 ${lastEventRef.current}`
- );
- }, 250);
- return () => clearInterval(id);
- }, []);
-
  // ── Phase 1: Video playback helpers ──
  const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
+ const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
 
  const stopLoop = () => {
  if (rafRef.current !== null) {
@@ -282,29 +228,10 @@ export default function ReelsCutterPage() {
  }
  };
 
- /** Seek the visible element and wait for it to settle. Every frame between the
-  * request and the 'seeked' event is a frozen picture — this is the stutter, and
-  * it is now only the fallback path. */
- const seekActiveTo = (target: number) => {
- const v = getAV();
- if (!v) return;
- programmaticSeekRef.current = true;
- v.currentTime = target;
- const done = () => { startLoop(); };
- const fallback = setTimeout(done, 800);
- v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
- };
-
- /** iOS allows only so many video elements to decode at once, and a second one
-  * competing for that budget can leave the first reporting itself as playing while
-  * its clock never advances — the picture simply stops. Handing playback between two
-  * elements bought a smoother jump between segments and cost that, which is not a
-  * trade worth making. One element, seeking in place, is what runs here now. */
-
  const startLoop = () => {
  stopLoop();
  const tick = () => {
- if (cutDoneRef.current) { rafRef.current = null; return; }
+ if (cutDoneRef.current) { rafRef.current = requestAnimationFrame(tick); return; }
  const v = getAV();
  const segs = segmentsRef.current;
  const dur = durationRef.current;
@@ -312,17 +239,23 @@ export default function ReelsCutterPage() {
  const t = v.currentTime;
  const inSeg = segs.find(s => t >= s.start - 0.1 && t <= (s.end ?? dur));
 
+ const seekTo = (target: number) => {
+ programmaticSeekRef.current = true;
+ v.currentTime = target;
+ const done = () => { startLoop(); };
+ const fallback = setTimeout(done, 800);
+ v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
+ };
+
  if (!inSeg) {
  const next = segs.filter(s => s.start > t).sort((a, b) => a.start - b.start)[0];
- if (next) seekActiveTo(next.start); else v.pause();
+ if (next) seekTo(next.start); else v.pause();
  rafRef.current = null; return;
  }
 
- const idx = segs.indexOf(inSeg);
-
  if (inSeg.end !== null && t >= inSeg.end - 0.08) {
- lastEventRef.current = `boundary @${inSeg.end.toFixed(2)}`;
- if (segs[idx + 1]) seekActiveTo(segs[idx + 1].start); else { lastEventRef.current = 'end, paused'; v.pause(); }
+ const nextSeg = segs[segs.indexOf(inSeg) + 1];
+ if (nextSeg) seekTo(nextSeg.start); else v.pause();
  rafRef.current = null; return;
  }
 
@@ -332,25 +265,15 @@ export default function ReelsCutterPage() {
  };
 
  useEffect(() => {
- // The playback loop exits while either drag flag is up, and both were only ever
- // lowered by an element's own pointerup. Touch does not reliably end that way —
- // Safari sends pointercancel whenever it decides a touch was really a scroll — and
- // a flag left up stops the loop for the rest of the session, which looks like
- // playback ignoring the segments entirely. Lower them on any pointer release,
- // wherever it lands.
- // Only pointerup ends a drag. Safari fires pointercancel while a touch is still
- // down whenever it reconsiders the gesture, and clearing the flag there killed
- // drags before they began — the timeline simply stopped responding.
- const releaseDrags = () => {
- const wasDragging = draggingRef.current !== null || seekDraggingRef.current;
+ const handlePointerUp = () => {
+ if (draggingRef.current) {
  draggingRef.current = null;
- seekDraggingRef.current = false;
- if (!wasDragging) return;
  const av = getAV();
  if (av && !av.paused) startLoop();
+ }
  };
- window.addEventListener('pointerup', releaseDrags);
- return () => window.removeEventListener('pointerup', releaseDrags);
+ window.addEventListener('pointerup', handlePointerUp);
+ return () => window.removeEventListener('pointerup', handlePointerUp);
  }, []);
 
  const handleTimeUpdate = () => {
@@ -358,8 +281,118 @@ export default function ReelsCutterPage() {
  if (av) setCurrentTime(av.currentTime);
  };
 
+ // ── Phase 2: Canvas syncAndDraw (ported from Dubber) ──
+ const syncAndDraw = () => {
+ const media = phase2VideoRef.current;
+ const canvas = canvasRef.current;
 
+ if (media && canvas) {
+ const ctx = canvas.getContext('2d');
+ const isActive = !media.paused && !media.ended;
 
+ if (isActive) {
+ currentTimeRef.current = media.currentTime;
+ const now = performance.now();
+ if (now - lastUIUpdateRef.current > 66) {
+ setCurrentTime(media.currentTime);
+ lastUIUpdateRef.current = now;
+ }
+ }
+
+ const timeChanged = currentTimeRef.current !== lastDrawnTimeRef.current;
+ const now = performance.now();
+ const shouldDraw = isActive ? (now - lastDrawTimeMsRef.current > 33) : timeChanged;
+
+ if (ctx && media.videoWidth > 0 && shouldDraw) {
+ if (isActive) lastDrawTimeMsRef.current = now;
+ const scale = previewScaleRef.current;
+ const targetW = Math.round(media.videoWidth * scale);
+ if (canvas.width !== targetW) {
+ canvas.width = targetW;
+ canvas.height = Math.round(media.videoHeight * scale);
+ }
+ ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
+ lastDrawnTimeRef.current = currentTimeRef.current;
+
+ // Draw subtitle on canvas
+ if (canvas.width > 0 && subtitleWords.length > 0) {
+ const time = currentTimeRef.current;
+ const wpl = wordsPerLineRef.current;
+ const wordGroups = buildWordGroups(subtitleWords, wpl);
+
+ let activeGroup: typeof subtitleWords | null = null;
+ let groupStartIndex = -1;
+ let flatIdx = 0;
+ for (const group of wordGroups) {
+ const groupStart = group[0].start;
+ const groupEnd = group[group.length - 1].end;
+ if (time >= groupStart && time <= groupEnd) {
+ activeGroup = group;
+ groupStartIndex = flatIdx;
+ break;
+ }
+ flatIdx += group.length;
+ }
+
+ if (activeGroup) {
+ const lineText = activeGroup.map((w: any) => w.word).join(' ');
+ const baseSize = (enablePump ? [28, 42, 58][groupStartIndex % 3] : 42) * fontScale;
+ const fontSize = Math.round(baseSize * (canvas.height / 500));
+ const x = canvas.width / 2;
+ const y = canvas.height - (canvas.height * subtitlePosRef.current / 100);
+ const borderW = Math.max(2, Math.round(2.4 * (canvas.height / 500)));
+
+ ctx.save();
+ ctx.font = `900 ${fontSize}px "${fontFamilyRef.current}", sans-serif`;
+ ctx.textAlign = 'center';
+ ctx.textBaseline = 'bottom';
+
+ ctx.shadowColor = 'transparent';
+ ctx.lineWidth = borderW;
+ ctx.lineJoin = 'round';
+ ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+ ctx.strokeText(lineText, x, y);
+
+ ctx.shadowColor = 'rgba(0,0,0,0.95)';
+ ctx.shadowOffsetX = 0;
+ ctx.shadowOffsetY = Math.round(2 * (canvas.height / 500));
+ ctx.shadowBlur = 4;
+ ctx.fillStyle = '#ECE9E4';
+ ctx.fillText(lineText, x, y);
+ ctx.restore();
+ }
+ }
+ }
+ }
+ };
+
+ // Keep syncAndDraw ref current
+ useEffect(() => { syncAndDrawRef.current = syncAndDraw; });
+
+ // Phase 2 RAF loop — runs only when cutDone
+ useEffect(() => {
+ if (!cutDone) return;
+ function loop() {
+ syncAndDrawRef.current();
+ phase2RafRef.current = requestAnimationFrame(loop);
+ }
+ const phase2RafRef = { current: requestAnimationFrame(loop) };
+ return () => { cancelAnimationFrame(phase2RafRef.current); };
+ }, [cutDone]);
+
+ // Phase 2 toggle play
+ const togglePlay = async () => {
+ const media = phase2VideoRef.current;
+ if (!media) return;
+ if (media.paused) {
+ try { await media.play(); setPaused(false); } catch (err) { console.error("Playback failed", err); }
+ } else {
+ media.pause();
+ setPaused(true);
+ }
+ };
+
+ useEffect(() => { togglePlayRef.current = togglePlay; });
 
  // Global Keydown Handler (Spacebar + Undo)
  useEffect(() => {
@@ -367,18 +400,22 @@ export default function ReelsCutterPage() {
  const target = e.target as HTMLElement;
  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
- // The subtitle editor binds its own keys once it takes over
- if (cutDoneRef.current) return;
-
  if (e.key === ' ') {
  e.preventDefault(); // Stop scrolling or pressing focused buttons
+ if (cutDoneRef.current) {
+ togglePlayRef.current();
+ } else {
  const av = activeIsARef.current ? videoARef.current : videoBRef.current;
  if (av) av.paused ? av.play() : av.pause();
+ }
  return;
  }
 
  if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
  e.preventDefault();
+ if (cutDoneRef.current) {
+ handleUndo();
+ } else {
  const h = cutHistoryRef.current;
  if (h.length > 0) {
  const prev = h.pop();
@@ -386,11 +423,42 @@ export default function ReelsCutterPage() {
  setCanUndoCut(h.length > 0);
  }
  }
+ }
  };
  window.addEventListener('keydown', handleKey);
  return () => window.removeEventListener('keydown', handleKey);
- }, []);
+ }, [handleUndo]);
 
+ // Phase 2: seek handler
+ const handlePhase2Seek = (e: React.ChangeEvent<HTMLInputElement>) => {
+ const newTime = parseFloat(e.target.value);
+ setCurrentTime(newTime);
+ currentTimeRef.current = newTime;
+ lastDrawnTimeRef.current = -1;
+ if (phase2VideoRef.current) phase2VideoRef.current.currentTime = newTime;
+ };
+
+ // Phase 2: drag subtitle position
+ const startDragging = (e: any) => {
+ const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+ const startY = clientY;
+ const startPos = subtitlePos;
+ const onMove = (moveEvent: any) => {
+ const currentY = moveEvent.touches ? moveEvent.touches[0].clientY : moveEvent.clientY;
+ const delta = ((startY - currentY) / (canvasRef.current?.clientHeight || 500)) * 100;
+ setSubtitlePos(Math.min(90, Math.max(10, startPos + delta)));
+ };
+ const onEnd = () => {
+ document.removeEventListener('mousemove', onMove);
+ document.removeEventListener('mouseup', onEnd);
+ document.removeEventListener('touchmove', onMove);
+ document.removeEventListener('touchend', onEnd);
+ };
+ document.addEventListener('mousemove', onMove);
+ document.addEventListener('mouseup', onEnd);
+ document.addEventListener('touchmove', onMove, { passive: false });
+ document.addEventListener('touchend', onEnd);
+ };
 
  // ── FFmpeg ──
  const loadFFmpeg = async () => {
@@ -434,7 +502,9 @@ export default function ReelsCutterPage() {
  setStatus("Ready");
  activeIsARef.current = true;
  setActiveIsA(true);
+ historyRef.current = [];
  cutHistoryRef.current = [];
+ setCanUndo(false);
  setCanUndoCut(false);
  }
  };
@@ -449,15 +519,7 @@ export default function ReelsCutterPage() {
  video.addEventListener('loadeddata', () => { clearTimeout(t); resolve(); }, { once: true });
  });
  }
- // Safari can return a play() promise that never settles when the element has had
- // no user gesture of its own, so every await here is raced against a timeout. A
- // hang would otherwise leave warmingUp set, and the playback loop bails while that
- // flag is up — which reads as the video ignoring the segments entirely.
- const withTimeout = (p: Promise<unknown>, ms: number) =>
- Promise.race([p.catch(() => {}), new Promise<void>(r => setTimeout(r, ms))]);
-
  warmingUpRef.current = true;
- try {
  video.muted = true;
  const seekTo = (t: number) => new Promise<void>(resolve => {
  if (Date.now() >= globalDeadline) { resolve(); return; }
@@ -468,17 +530,12 @@ export default function ReelsCutterPage() {
  for (const seg of segs) {
  if (Date.now() >= globalDeadline) break;
  await seekTo(seg.start);
- await withTimeout(video.play(), 800);
+ await video.play().catch(() => {});
  await new Promise<void>(r => setTimeout(r, 700));
  video.pause();
  }
  video.muted = false;
-
- } finally {
- // Whatever happened above, playback must not be left gated behind this flag
  warmingUpRef.current = false;
- }
-
  video.currentTime = segs[0].start;
  };
 
@@ -503,20 +560,19 @@ export default function ReelsCutterPage() {
  await ffmpeg.exec(['-i', 'input.mov', '-vn', '-ar', '16000', '-ac', '1', 'whisper.mp3']);
  const audioData = await ffmpeg.readFile('whisper.mp3');
  const audioRawBuffer = (audioData as any).buffer as ArrayBuffer;
+ const audioBlob = new Blob([audioRawBuffer], { type: 'audio/mpeg' });
+ const form = new FormData();
+ form.append('video', audioBlob, 'audio.mp3');
+ const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
 
- // One decode feeds both the waveform and the cut detection. No network, so the
- // cuts are ready before the preview has finished encoding.
- setStatus("Listening for silence...");
- let detected: { start: number; end: number | null }[] | null = null;
+ // Generate waveform in parallel
+ (async () => {
  try {
  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
  const actx = new AudioCtx();
  const decoded = await actx.decodeAudioData(audioRawBuffer.slice());
  actx.close();
  const ch = decoded.getChannelData(0);
-
- detected = detectSpeechSegments(ch, decoded.sampleRate, SILENCE_MIN_GAP, CUT_SENSITIVITY);
-
  const W = 1200, H = 56;
  const wc = document.createElement('canvas');
  wc.width = W; wc.height = H;
@@ -530,32 +586,26 @@ export default function ReelsCutterPage() {
  wctx.fillRect(i, (H - h) / 2, 1, h);
  }
  setWaveformBg(wc.toDataURL());
- } catch { /* fall back to one uncut segment below */ }
-
+ } catch { /* waveform is optional */ }
+ })();
  setStatus("Creating preview...");
- // -g 15, as it always was. Five made seeks cheaper and the file several times
- // heavier, and a heavy blob is exactly what leaves an iPhone reporting a video as
- // playing while it decodes nothing.
  await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '15', '-keyint_min', '15', '-c:a', 'copy', 'preview.mp4']);
  const previewData = await ffmpeg.readFile('preview.mp4');
-
- // ffmpeg.wasm's filesystem is the browser's own memory. The source video and the
- // extracted audio have both been consumed by now, and renderVideo writes the
- // source again for itself, so holding them through the whole editing session only
- // starves the video decoder — which on iOS shows up as playback that reports
- // itself as running and never produces a frame.
- await ffmpeg.deleteFile('input.mov').catch(() => {});
- await ffmpeg.deleteFile('whisper.mp3').catch(() => {});
  setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
-
- const segs = detected ?? [{ start: 0, end: null }];
- setSegments(segs);
-
+ setStatus("Whisper is analyzing...");
+ const res = await whisperPromise;
+ const data = await res.json();
+ 
+ if (data.segments) {
+ setSegments(data.segments);
+ if (data.words) setSubtitleWords(data.words);
+ 
  setStatus("Preparing edit...");
  setProgress(0);
- await warmupSegments(segs);
+ await warmupSegments(data.segments);
  setStatus("Review Edit");
- } catch {
+ }
+ } catch (e) {
  setStatus("Error");
  } finally {
  setProcessing(false);
@@ -582,50 +632,14 @@ export default function ReelsCutterPage() {
  '-filter_complex', f,
  '-map', '[outv]', '-map', '[outa]',
  '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
- // Without this the encoder defaults to a keyframe every 250 frames, which makes
- // scrubbing the subtitle editor's seek bar decode up to eight seconds of video
- // for a single frame.
- '-g', '5', '-keyint_min', '5',
  'cut_preview.mp4',
  ]);
 
  const cutData = await ffmpegRef.current.readFile('cut_preview.mp4');
- await ffmpegRef.current.deleteFile('preview.mp4').catch(() => {});
  const cutUrl = URL.createObjectURL(new Blob([(cutData as any).buffer], { type: 'video/mp4' }));
 
- // Ask Whisper about the video that now exists, rather than calculating what it
- // would probably have said. Arithmetic remapping only ever approximated this: it
- // squashes any word that straddles a cut, and leaves every word ending where the
- // silence used to begin, which is what makes these blocks so much narrower than
- // the ones in reels-dubber. Transcribing the cut audio puts this editor in exactly
- // the state reels-dubber is in — a real file, and timings straight from Whisper.
- let words: typeof subtitleWords | null = null;
- try {
- setStatus("Re-reading the cut...");
- setProgress(0);
- await ffmpegRef.current.exec(['-y', '-i', 'cut_preview.mp4', '-vn', '-ar', '16000', '-ac', '1', 'cut_audio.mp3']);
- const cutAudio = await ffmpegRef.current.readFile('cut_audio.mp3');
- const form = new FormData();
- form.append('video', new Blob([(cutAudio as any).buffer], { type: 'audio/mpeg' }), 'audio.mp3');
- const res = await fetch('/api/whisper', { method: 'POST', body: form });
- if (res.ok) {
- const data = await res.json();
- if (Array.isArray(data.words) && data.words.length > 0) words = data.words;
- }
- await ffmpegRef.current.deleteFile('cut_audio.mp3').catch(() => {});
- await ffmpegRef.current.deleteFile('cut_preview.mp4').catch(() => {});
- } catch {
- // Fall through to the remap below — a failed transcription must not cost the cut
- }
-
- // Fallback, and the behaviour every previous build shipped: map the existing
- // timings onto the cut timeline. Lenient about what survives — any overlap at all
- // keeps the word, since half a word is still audible. Only words that fall
- // entirely inside a removed stretch are dropped, because their audio is gone.
- if (!words) {
- const survivesCut = (w: { start: number; end: number }) =>
- segments.some(s => w.end > s.start && w.start < (s.end ?? duration));
- words = subtitleWords.filter(survivesCut).map(w => ({
+ // Remap subtitle timestamps to cut timeline
+ const remapped = subtitleWords.map(w => ({
  ...w,
  start: Number(remapToExportTime(w.start, segments, duration).toFixed(3)),
  end: Number(Math.max(
@@ -633,13 +647,19 @@ export default function ReelsCutterPage() {
  remapToExportTime(w.end, segments, duration)
  ).toFixed(3)),
  }));
- }
+
+ // Save originals for "go back"
+ origVideoUrlRef.current = videoUrl;
+ origSubtitleWordsRef.current = subtitleWords;
 
  setVideoUrl(cutUrl);
- setSubtitleWords(words);
+ setSubtitleWords(remapped);
  setCutDone(true);
  setPaused(true);
  currentTimeRef.current = 0;
+ lastDrawnTimeRef.current = -1;
+ historyRef.current = [];
+ setCanUndo(false);
  cutHistoryRef.current = [];
  setCanUndoCut(false);
  setStatus("Edit Subtitles");
@@ -650,9 +670,22 @@ export default function ReelsCutterPage() {
  }
  };
 
+ // ── Go back from Phase 2 to Phase 1 ──
+ const goBackToCutMode = () => {
+ // Pause Phase 2 video
+ phase2VideoRef.current?.pause();
+ setPaused(true);
+ // Restore originals
+ if (origVideoUrlRef.current) setVideoUrl(origVideoUrlRef.current);
+ setSubtitleWords(origSubtitleWordsRef.current);
+ setCutDone(false);
+ setStatus("Review Edit");
+ historyRef.current = [];
+ setCanUndo(false);
+ };
 
  // ── Phase 2: Export (with grouped subtitles) ──
- const renderVideo = async (style?: SubtitleStyle) => {
+ const renderVideo = async () => {
  if (!videoFile || !segments) return;
  setIsExporting(true);
  setExportProgress(0);
@@ -661,11 +694,11 @@ export default function ReelsCutterPage() {
  const { fetchFile } = await import('@ffmpeg/util');
  await ffmpegRef.current.writeFile('input.mov', await fetchFile(videoFile));
 
- const withSubtitles = !!style && style.words.length > 0;
+ const withSubtitles = subtitleWords.length > 0;
 
  if (withSubtitles) {
  setStatus("Loading font...");
- const selectedFont = FONTS.find(f => f.id === style!.fontFamily) ?? FONTS[0];
+ const selectedFont = FONTS.find(f => f.id === fontFamily) ?? FONTS[0];
  const fontRes = await fetch(selectedFont.file);
  if (!fontRes.ok) throw new Error('Font not found in /public');
  await ffmpegRef.current.writeFile('myfont.ttf', new Uint8Array(await fontRes.arrayBuffer()));
@@ -688,7 +721,7 @@ export default function ReelsCutterPage() {
  let drawtextChain = '';
  if (withSubtitles) {
  // Use grouped words (Dubber-style) for export
- const groups = buildWordGroups(style!.words, style!.wordsPerLine);
+ const groups = buildWordGroups(subtitleWords, wordsPerLine);
  const dtFilters = groups.map((group, groupIndex) => {
  const lineText = group.map((w: any) => w.word).join(' ');
  let safeWord = lineText.trim()
@@ -700,7 +733,7 @@ export default function ReelsCutterPage() {
  .replace(/\]/g, '\\]');
  if (!safeWord) return null;
 
- const baseSize = (style!.enablePump ? [28, 42, 58][groupIndex % 3] : 42) * style!.fontScale;
+ const baseSize = (enablePump ? [28, 42, 58][groupIndex % 3] : 42) * fontScale;
  const fontSize = Math.round(baseSize * scaleRatio);
 
  const rs = cutDone ? group[0].start : remapToExportTime(group[0].start, segments, duration);
@@ -713,7 +746,7 @@ export default function ReelsCutterPage() {
  if (re > nextStart) re = Math.max(rs + 0.05, nextStart - 0.01);
  }
 
- const yPos = `h-(h*${style!.subtitlePos}/100)-text_h`;
+ const yPos = `h-(h*${subtitlePos}/100)-text_h`;
  return `drawtext=fontfile='myfont.ttf':text='${safeWord}':enable='between(t,${rs.toFixed(3)},${re.toFixed(3)})':x=(w-text_w)/2:y=${yPos}:fontsize=${fontSize}:fontcolor=0xECE9E4:bordercolor=black@0.9:borderw=2:shadowx=0:shadowy=2:shadowcolor=black@0.95`;
  }).filter(Boolean);
  if (dtFilters.length > 0) drawtextChain = dtFilters.join(',') + ',';
@@ -726,12 +759,17 @@ export default function ReelsCutterPage() {
 
  const url = URL.createObjectURL(new Blob([(await ffmpegRef.current.readFile('out.mp4') as any).buffer], { type: 'video/mp4' }));
  const a = document.createElement('a'); a.href = url; a.download = `deVee_${videoFile.name}.mp4`; a.click();
- await ffmpegRef.current.deleteFile('input.mov').catch(() => {});
- await ffmpegRef.current.deleteFile('out.mp4').catch(() => {});
  setStatus("Done!");
  } catch (e) { setStatus("Error"); } finally { setIsExporting(false); setExportProgress(0); }
  };
 
+ // ── Format time ──
+ const formatTime = (time: number) => {
+ if (isNaN(time)) return "00:00";
+ const m = Math.floor(time / 60).toString().padStart(2, '0');
+ const s = Math.floor(time % 60).toString().padStart(2, '0');
+ return `${m}:${s}`;
+ };
 
  // ═══════════════════════════════════════════════════════
  // ██ R E N D E R
@@ -779,7 +817,7 @@ export default function ReelsCutterPage() {
  <p className="text-white text-[11px] tracking-[0.05em] font-light uppercase">For Vertical 1080p Video</p>
  </div>
  <form onSubmit={handleLogin} className="space-y-4 bg-[#0c0c0c]/40 p-8 rounded-[24px] border border-white/5 backdrop-blur-xl w-full">
- <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none placeholder:text-[9px]" placeholder="ACCESS KEY" />
+ <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none" placeholder="ACCESS KEY" />
  <button type="submit" className="w-full py-3 bg-[#D4AF37] text-black rounded-xl uppercase tracking-[0.3em] text-[8px] font-black">Enter</button>
  </form>
  </main>
@@ -797,13 +835,233 @@ export default function ReelsCutterPage() {
  // ═══════════════════════════════════════════════════════════════════
  if (cutDone && videoUrl) {
  return (
- <SubtitleEditor
- videoUrl={videoUrl}
- initialWords={subtitleWords}
- isExporting={isExporting}
- exportProgress={exportProgress}
- onExport={renderVideo}
+ <div className="min-h-[100dvh] w-full text-white flex flex-col items-center overflow-y-auto overflow-x-hidden ">
+ <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
+ <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
+ <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
+ </header>
+
+ <main className="w-full max-w-2xl mx-auto flex flex-col items-center flex-1 px-4 md:px-6 space-y-3 md:space-y-5 py-4 md:py-6">
+ <div className="w-full space-y-3 md:space-y-5">
+ {/* Canvas preview */}
+ <div className="relative w-full h-[48vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
+ <div className="relative w-full h-full cursor-pointer" onClick={togglePlay}>
+ <video
+ ref={phase2VideoRef}
+ src={videoUrl}
+ preload="auto"
+ style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+ playsInline
+ onLoadedData={() => { lastDrawnTimeRef.current = -1; }}
+ onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
  />
+ <canvas ref={canvasRef} className="w-full h-full object-contain" />
+
+ {isExporting && (
+ <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+ <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden mb-4">
+ <div className="h-full bg-[#D4AF37] transition-all duration-300" style={{ width: `${exportProgress}%` }}></div>
+ </div>
+ <p className="text-[10px] font-black tracking-[0.5em] text-white uppercase animate-pulse">Burning {exportProgress}%</p>
+ </div>
+ )}
+
+ {paused && !isExporting && (
+ <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+ <div className="w-16 h-16 md:w-20 md:h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-2xl">
+ <div className="w-0 h-0 border-t-[10px] border-t-transparent border-l-[18px] border-l-white border-b-[10px] border-b-transparent ml-2" />
+ </div>
+ </div>
+ )}
+
+ {/* Drag handle for subtitle position */}
+ <div
+ className="absolute left-0 right-0 flex justify-center px-6 text-center select-none z-30 cursor-ns-resize active:cursor-grabbing"
+ style={{ bottom: `${subtitlePos}%` }}
+ onMouseDown={(e) => { e.stopPropagation(); startDragging(e); }}
+ onTouchStart={(e) => { e.stopPropagation(); startDragging(e); }}
+ >
+ <span className="font-black uppercase tracking-tighter pointer-events-none" style={{ fontFamily: 'NotoSansTight, sans-serif', color: 'transparent', display: 'none' }} />
+ </div>
+ </div>
+ </div>
+
+ <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
+ {/* Seek bar */}
+ <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <button onClick={togglePlay} className="w-9 h-9 shrink-0 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.3)] active:scale-95 transition-transform">
+ {!paused ? (
+ <div className="flex gap-1">
+ <div className="w-1 h-3 bg-black rounded-full"></div>
+ <div className="w-1 h-3 bg-black rounded-full"></div>
+ </div>
+ ) : (
+ <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent ml-1"></div>
+ )}
+ </button>
+ <input type="range" min="0" max={duration || 100} step="0.01" value={currentTime} onChange={handlePhase2Seek} className="flex-1 h-2 bg-white/5 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-[#D4AF37] [&::-webkit-slider-thumb]:rounded-full cursor-pointer" />
+ <div className="shrink-0 flex gap-1 text-[9px] font-mono text-white/40">
+ <span className="text-white/80">{formatTime(currentTime)}</span>
+ <span>/</span>
+ <span>{formatTime(duration)}</span>
+ </div>
+ </div>
+
+ {/* Position / Font strip */}
+ <div className="flex items-center gap-2 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <span className="text-[7px] uppercase tracking-[0.2em] text-white/30 font-bold shrink-0">Pos</span>
+ <button onClick={() => setSubtitlePos(prev => Math.max(10, prev - 5))} className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[10px] active:scale-90 transition-transform">▼</button>
+ <span className="text-[8px] font-mono text-[#D4AF37] w-7 text-center shrink-0">{Math.round(subtitlePos)}%</span>
+ <button onClick={() => setSubtitlePos(prev => Math.min(90, prev + 5))} className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[10px] active:scale-90 transition-transform">▲</button>
+ <div className="w-px h-3.5 bg-white/10 shrink-0 mx-1" />
+ {/* Font dropdown */}
+ <div className="relative flex-1 flex justify-end">
+ {fontDropdownOpen && (
+ <>
+ <div className="fixed inset-0 z-10" onClick={() => setFontDropdownOpen(false)} />
+ <div className="absolute bottom-full right-0 mb-2 z-20 w-56 rounded-2xl bg-[#111] border border-white/10 overflow-hidden shadow-2xl">
+ {FONTS.filter(f => loadedFonts.has(f.id)).map(f => (
+ <button
+ key={f.id}
+ onClick={() => { setFontFamily(f.id); setFontDropdownOpen(false); }}
+ className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${fontFamily === f.id ? 'bg-[#D4AF37]/20' : 'hover:bg-white/5'}`}
+ >
+ <span className="text-[9px] uppercase tracking-widest font-bold text-white/50">{f.label}</span>
+ <span
+ className={`text-2xl leading-none ${fontFamily === f.id ? 'text-[#D4AF37]' : 'text-white/80'}`}
+ style={{ fontFamily: f.id }}
+ >
+ שלום
+ </span>
+ </button>
+ ))}
+ {loadedFonts.size === 0 && (
+ <div className="px-4 py-3 text-[9px] text-white/30 uppercase tracking-widest">Loading fonts…</div>
+ )}
+ </div>
+ </>
+ )}
+ <button
+ onClick={() => setFontDropdownOpen(prev => !prev)}
+ className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-wide transition-all ${fontDropdownOpen ? 'bg-[#D4AF37] text-black' : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10'}`}
+ >
+ <span>{FONTS.find(f => f.id === fontFamily)?.label ?? fontFamily}</span>
+ <span className="opacity-60">{fontDropdownOpen ? '▴' : '▾'}</span>
+ </button>
+ </div>
+ </div>
+
+ {/* Timeline (word editor) */}
+ {subtitleWords.length > 0 && duration > 0 ? (
+ <div>
+ <div className="flex justify-end mb-1.5">
+ <button
+ onClick={handleUndo}
+ disabled={!canUndo}
+ className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all ${canUndo ? 'bg-[#D4AF37] text-black active:scale-95 hover:bg-[#E5BE48]' : 'bg-white/5 text-white/20 pointer-events-none'}`}
+ >
+ <span className="text-[11px]">↩️</span> UNDO
+ </button>
+ </div>
+ <Timeline
+ chunks={[{
+ start: subtitleWords[0].start,
+ end: subtitleWords[subtitleWords.length - 1].end,
+ words: subtitleWords.map(item => ({ word: item.word, start: item.start, end: item.end, forceBreak: !!item.forceBreak })),
+ }]}
+ duration={duration}
+ getCurrentTime={getTimeCallback}
+ isPlaying={isPlayingCallback}
+ onDragStart={() => pushHistory(subtitleWords)}
+ onWordTimingChange={(_chunkIndex, wordIndex, patch) => {
+ setSubtitleWords(prev => prev.map((item, i) =>
+ i === wordIndex ? { ...item, ...patch } : item
+ ));
+ }}
+ onWordTextChange={(_chunkIndex, wordIndex, text) => {
+ pushHistory(subtitleWords);
+ setSubtitleWords(prev => prev.map((item, i) =>
+ i === wordIndex ? { ...item, word: text } : item
+ ));
+ }}
+ onWordDelete={(_chunkIndex, wordIndex) => {
+ pushHistory(subtitleWords);
+ setSubtitleWords(prev => prev.filter((_, i) => i !== wordIndex));
+ }}
+ onWordToggleForceBreak={(_chunkIndex, wordIndex) => {
+ pushHistory(subtitleWords);
+ setSubtitleWords(prev => prev.map((item, i) =>
+ i === wordIndex ? { ...item, forceBreak: !item.forceBreak } : item
+ ));
+ }}
+ onSeek={(t) => {
+ setCurrentTime(t);
+ currentTimeRef.current = t;
+ lastDrawnTimeRef.current = -1;
+ if (phase2VideoRef.current) phase2VideoRef.current.currentTime = t;
+ }}
+ />
+ </div>
+ ) : (
+ <div className="h-16 bg-[#0c0c0c] border border-white/[0.03] rounded-2xl flex items-center justify-center">
+ <div className="text-[8px] uppercase tracking-[0.3em] text-white/10 font-bold">No subtitle data</div>
+ </div>
+ )}
+
+ {/* Size & Pump slider */}
+ <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none">Size</span>
+ <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
+ <button
+ onClick={() => setEnablePump(p => !p)}
+ className={`ml-2 px-3 py-1.5 rounded-lg text-[8px] uppercase tracking-widest font-bold transition-all ${enablePump ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30' : 'bg-white/5 text-white/30 border border-white/5'}`}
+ >
+ Pump {enablePump ? 'ON' : 'OFF'}
+ </button>
+ </div>
+
+ {/* Words per line selector */}
+ <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none">UP TO __ WORDS</span>
+ <div className="flex-1 flex items-center justify-center gap-1.5">
+ {[1, 2, 3, 4, 5].map((n) => (
+ <button
+ key={n}
+ onClick={() => setWordsPerLine(n)}
+ className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
+ wordsPerLine === n
+ ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
+ : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
+ }`}
+ >
+ {n}
+ </button>
+ ))}
+ </div>
+ </div>
+
+ {/* Action buttons */}
+ <div className="flex flex-col gap-3 md:gap-4 pb-4">
+ <button
+ onClick={goBackToCutMode}
+ className="w-full py-3 border border-white/10 rounded-full uppercase tracking-[0.4em] text-[8px] font-bold text-white/40 hover:bg-white/5 transition-all text-center"
+ >
+ ← Back to Cutting
+ </button>
+ <button
+ onClick={renderVideo}
+ disabled={isExporting}
+ className={`w-full py-5 rounded-full uppercase tracking-[0.5em] text-[10px] font-black transition-all ${!isExporting ? 'bg-[#D4AF37] text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] active:scale-95' : 'bg-white/5 text-white/20'}`}
+ >
+ {isExporting ? `Burning ${exportProgress}%` : 'Export Master'}
+ </button>
+ </div>
+ </div>
+ </div>
+ </main>
+
+
+ </div>
  );
  }
 
@@ -812,9 +1070,6 @@ export default function ReelsCutterPage() {
  // ═══════════════════════════════════════════════════════════════════
  return (
  <div className="min-h-[100dvh] text-white flex flex-col items-center overflow-y-auto overflow-x-hidden ">
- {dbg && (
- <pre style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, margin: 0, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 12px/1.45 ui-monospace, monospace', padding: '6px 8px', textAlign: 'left', direction: 'ltr', whiteSpace: 'pre-wrap' }}>{dbg}</pre>
- )}
  <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
  <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
  <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
@@ -857,7 +1112,7 @@ export default function ReelsCutterPage() {
  {/* Video B */}
  <video
  ref={videoBRef}
- /* No src: a loaded second element competes for the decoder budget */
+ src={videoUrl ?? undefined}
  onTimeUpdate={handleTimeUpdate}
  onPlay={() => { if (activeIsARef.current) return; if (!warmingUpRef.current) setPaused(false); startLoop(); }}
  onSeeked={(e) => {
@@ -893,22 +1148,8 @@ export default function ReelsCutterPage() {
  </div>
  )}
 
- {/* ── Bottom panel — CUT MODE only ──
- Rendered before an upload too, with an empty timeline. The controls a user is
- about to reach for should already be on screen, not appear once the analysis
- finishes — which is how reels-motion and reels-dubber both behave. */}
- </div>
- ) : (
- <div className="relative w-full h-[40vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
- <label className="h-48 md:h-64 w-full flex flex-col items-center justify-center cursor-pointer space-y-4">
- <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mx-auto text-white/20 text-xl">+</div>
- <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold">Upload Media</p>
- <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
- </label>
- </div>
- )}
-
- {!zoomMode && (
+ {/* ── Bottom panel — CUT MODE only ── */}
+ {segments && !zoomMode && (
  <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
  {/* ── CUTTER MODE ── */}
  <div className="flex items-center justify-between px-0.5">
@@ -959,7 +1200,7 @@ export default function ReelsCutterPage() {
 
  <div ref={timelineContainerRef} className="w-full overflow-x-auto rounded-xl [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
  <div className="relative h-8" style={{ width: `${zoom * 100}%`, minWidth: '100%' }}>
- {(segments ?? []).map((seg, i) => (
+ {segments.map((seg, i) => (
  <button key={`del-${i}`} className="absolute top-1 -translate-x-1/2 flex items-center justify-center w-6 h-6 text-red-500 hover:text-red-400 text-[14px] font-black leading-none z-20 transition-colors" style={{ left: `${(((seg.start + (seg.end ?? duration)) / 2) / duration) * 100}%` }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } setSegments(prev => prev ? prev.filter((_, idx) => idx !== i) : prev); }}>×</button>
  ))}
  </div>
@@ -967,7 +1208,7 @@ export default function ReelsCutterPage() {
  {waveformBg && (
  <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden" style={{ backgroundImage: `url(${waveformBg})`, backgroundSize: '100% 100%', opacity: 0.2 }} />
  )}
- {(segments ?? []).map((seg, i) => (
+ {segments.map((seg, i) => (
  <div key={i} className="absolute top-0 bottom-0 cursor-ew-resize" style={{ left: `${(seg.start / duration) * 100}%`, width: `${(((seg.end ?? duration) - seg.start) / duration) * 100}%`, touchAction: 'none' }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const rect = e.currentTarget.getBoundingClientRect(); draggingRef.current = { index: i, edge: (e.clientX - rect.left) < rect.width / 2 ? 'start' : 'end' }; if (segments) { cutHistoryRef.current.push([...segments]); setCanUndoCut(true); } }}
  onPointerMove={(e) => { if (!draggingRef.current || !timelineRef.current) return; const rect = timelineRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) / rect.width * duration; const { edge } = draggingRef.current; setSegments(prev => prev ? prev.map((s, idx) => { if (idx !== i) return s; if (edge === 'start') return { ...s, start: Math.min(t, (s.end ?? duration) - 0.1) }; return { ...s, end: Math.max(t, s.start + 0.1) }; }) : prev); }}
@@ -979,7 +1220,7 @@ export default function ReelsCutterPage() {
  </div>
  ))}
  {/* Red Draggable Playhead */}
- <div className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}>
+ <div className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-4 h-4 bg-red-500 rotate-45 cursor-grab active:cursor-grabbing pointer-events-auto shadow-[0_0_8px_rgba(239,68,68,0.6)]"
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { if (!seekDraggingRef.current || !timelineRef.current) return; const av = getAV(); if (!av) return; const rect = timelineRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
@@ -991,9 +1232,9 @@ export default function ReelsCutterPage() {
 
  <div ref={seekBarRef} className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }} onClick={(e) => { const av = getAV(); if (!seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}>
  <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
- <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
+ <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
  </div>
- <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}
+ <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
@@ -1009,7 +1250,7 @@ export default function ReelsCutterPage() {
 
  <div className="flex justify-center items-center gap-3">
  <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
- {segments && segments.length > 0 && (
+ {subtitleWords.length > 0 && (
  <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/30 transition-colors">Done Cutting →</button>
  )}
  </div>
@@ -1024,9 +1265,9 @@ export default function ReelsCutterPage() {
  onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  >
  <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
- <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
+ <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
  </div>
- <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}
+ <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !av) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
@@ -1057,11 +1298,18 @@ export default function ReelsCutterPage() {
  </div>
  </div>
  )}
+ </div>
+ ) : (
+ <div className="relative w-full h-[40vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
+ <label className="h-48 md:h-64 w-full flex flex-col items-center justify-center cursor-pointer space-y-4">
+ <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mx-auto text-white/20 text-xl">+</div>
+ <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold">Upload Media</p>
+ <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
+ </label>
+ </div>
+ )}
 
- {/* Appears once a file is chosen and stays through the analysis, so the setting is
- adjustable while the tool works. Held back on the empty screen, where there is
- nothing yet for it to apply to. */}
- {videoFile && !segments && (
+ {!segments && !videoFile && (
  <>
  {/* Auto Zoom Settings */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
@@ -1078,7 +1326,49 @@ export default function ReelsCutterPage() {
  )}
  </div>
  </div>
+
+ {/* Subtitle Size & Pump */}
+ <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Size</span>
+ <input type="range" min="0.5" max="1.5" step="0.01" value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))} className="flex-1 accent-[#D4AF37]" />
+ <button
+ onClick={() => setEnablePump(p => !p)}
+ className={`ml-2 px-3 py-1.5 rounded-lg text-[8px] uppercase tracking-widest font-bold transition-all ${enablePump ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30' : 'bg-white/5 text-white/30 border border-white/5'}`}
+ >
+ Pump {enablePump ? 'ON' : 'OFF'}
+ </button>
+ </div>
+
+ {/* Words per line */}
+ <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
+ <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Words/Line</span>
+ <div className="flex-1 flex items-center justify-center gap-1.5">
+ {[1, 2, 3, 4, 5].map((n) => (
+ <button
+ key={n}
+ onClick={() => setWordsPerLine(n)}
+ className={`w-8 h-8 rounded-lg text-[11px] font-bold transition-all ${
+ wordsPerLine === n
+ ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)]'
+ : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
+ }`}
+ >
+ {n}
+ </button>
+ ))}
+ </div>
+ </div>
+
+ <button disabled className="w-full py-5 rounded-[22px] uppercase tracking-[0.4em] text-[10px] font-black cursor-default mt-2 mb-6" style={{ backgroundColor: '#0e0e0e', color: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.04)' }}>Cut Video</button>
  </>
+ )}
+ {!segments && videoFile && (
+ <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
+ Waiting for Auto Cut...
+ </div>
+ )}
+ {segments && (
+ <button onClick={renderVideo} disabled={processing || isExporting} className="w-full py-5 rounded-[22px] bg-[#D4AF37] text-black uppercase tracking-[0.4em] text-[10px] font-black transition-transform duration-200 hover:scale-[1.025] active:scale-[0.97]">Export Master</button>
  )}
  </div>
  </div>
