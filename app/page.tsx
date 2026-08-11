@@ -190,13 +190,6 @@ export default function ReelsCutterPage() {
  const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
  const durationRef = useRef<number>(0);
  const programmaticSeekRef = useRef(false);
- // Segment index the idle <video> is currently parked one step ahead of (-1 = nothing parked)
- const prerolledIdxRef = useRef(-1);
- // Time the idle element has genuinely finished seeking to, taken from its 'seeked'
- // event. Reading currentTime instead is unreliable on iOS — it reports the target
- // before the decoder has caught up, so a swap could hand over a frame that is not
- // ready and the picture hitches anyway.
- const parkedTimeRef = useRef<number | null>(null);
  // What the loop last did at a segment boundary, for the ?debug=1 readout
  const lastEventRef = useRef('—');
  // Decoded samples are kept so the sliders can re-cut instantly, without decoding
@@ -233,8 +226,7 @@ export default function ReelsCutterPage() {
  }, []);
 
  // ── Sync refs ──
- // Deleting or dragging a segment shifts every index, so the parked element is stale
- useEffect(() => { segmentsRef.current = segments; prerolledIdxRef.current = -1; }, [segments]);
+ useEffect(() => { segmentsRef.current = segments; }, [segments]);
  useEffect(() => { durationRef.current = duration; }, [duration]);
  // The cut-review videos unmount when the subtitle editor takes over, so their
  // onPause never fires and nothing else ever stopped this loop — it kept asking for
@@ -283,7 +275,6 @@ export default function ReelsCutterPage() {
 
  // ── Phase 1: Video playback helpers ──
  const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
- const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
 
  const stopLoop = () => {
  if (rafRef.current !== null) {
@@ -305,52 +296,11 @@ export default function ReelsCutterPage() {
  v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
  };
 
- /** Park the idle element on a segment's first frame while the other one plays.
-  * The decode happens off-screen, so the later hand-off costs nothing visible. */
- const prerollTo = (time: number) => {
- const bv = getBV();
- if (!bv) return;
- if (!bv.paused) bv.pause();
- parkedTimeRef.current = null;
- if (bv.readyState >= 2 && Math.abs(bv.currentTime - time) < 0.02) {
- parkedTimeRef.current = time;
- return;
- }
- bv.addEventListener('seeked', () => { parkedTimeRef.current = time; }, { once: true });
- bv.currentTime = time;
- };
-
- /** Hand playback to the idle element, already sitting on this segment's start:
-  * flip which one is visible instead of seeking. Falls back to seekActiveTo
-  * whenever the idle element isn't parked yet or autoplay refuses the handover,
-  * so the worst case is exactly the old behaviour. */
- const swapToSegment = (segIdx: number, segs: { start: number; end: number | null }[]) => {
- const seg = segs[segIdx];
- const cur = getAV();
- const nxt = getBV();
- const parked = !!nxt && nxt.readyState >= 2 && parkedTimeRef.current !== null
- && Math.abs(parkedTimeRef.current - seg.start) < 0.02;
-
- if (!cur || !nxt || !parked) { lastEventRef.current = `seek->${seg.start.toFixed(2)}`; seekActiveTo(seg.start); return; }
-
- activeIsARef.current = !activeIsARef.current;
- setActiveIsA(activeIsARef.current);
- prerolledIdxRef.current = segIdx;
-
- lastEventRef.current = `swap->${seg.start.toFixed(2)}`;
- nxt.play().then(() => {
- lastEventRef.current = `swapped ${seg.start.toFixed(2)}`;
- cur.pause();
- const following = segs[segIdx + 1];
- if (following) prerollTo(following.start);
- startLoop();
- }).catch(() => {
- lastEventRef.current = 'play REFUSED';
- activeIsARef.current = !activeIsARef.current;
- setActiveIsA(activeIsARef.current);
- seekActiveTo(seg.start);
- });
- };
+ /** iOS allows only so many video elements to decode at once, and a second one
+  * competing for that budget can leave the first reporting itself as playing while
+  * its clock never advances — the picture simply stops. Handing playback between two
+  * elements bought a smoother jump between segments and cost that, which is not a
+  * trade worth making. One element, seeking in place, is what runs here now. */
 
  const startLoop = () => {
  stopLoop();
@@ -371,16 +321,9 @@ export default function ReelsCutterPage() {
 
  const idx = segs.indexOf(inSeg);
 
- // Keep the idle element one segment ahead of wherever playback currently is
- if (prerolledIdxRef.current !== idx) {
- prerolledIdxRef.current = idx;
- const next = segs[idx + 1];
- if (next) prerollTo(next.start);
- }
-
  if (inSeg.end !== null && t >= inSeg.end - 0.08) {
  lastEventRef.current = `boundary @${inSeg.end.toFixed(2)}`;
- if (segs[idx + 1]) swapToSegment(idx + 1, segs); else { lastEventRef.current = 'end, paused'; v.pause(); }
+ if (segs[idx + 1]) seekActiveTo(segs[idx + 1].start); else { lastEventRef.current = 'end, paused'; v.pause(); }
  rafRef.current = null; return;
  }
 
@@ -493,7 +436,6 @@ export default function ReelsCutterPage() {
  setStatus("Ready");
  activeIsARef.current = true;
  setActiveIsA(true);
- prerolledIdxRef.current = -1;
  cutHistoryRef.current = [];
  setCanUndoCut(false);
  }
@@ -516,7 +458,6 @@ export default function ReelsCutterPage() {
  const withTimeout = (p: Promise<unknown>, ms: number) =>
  Promise.race([p.catch(() => {}), new Promise<void>(r => setTimeout(r, ms))]);
 
- const idle = videoBRef.current;
  warmingUpRef.current = true;
  try {
  video.muted = true;
@@ -535,26 +476,12 @@ export default function ReelsCutterPage() {
  }
  video.muted = false;
 
- // Unlock the second element for programmatic playback. Browsers only allow
- // play() on an element that has already played once, and the hand-off between
- // segments calls play() with no user gesture of its own. If the browser refuses,
- // swapToSegment falls back to seeking in place, so this is worth trying and not
- // worth waiting on.
- if (idle) {
- idle.muted = true;
- await withTimeout(idle.play(), 600);
- try { idle.pause(); } catch { /* never started */ }
- idle.muted = false;
- }
  } finally {
  // Whatever happened above, playback must not be left gated behind this flag
  warmingUpRef.current = false;
  }
 
- prerolledIdxRef.current = -1;
  video.currentTime = segs[0].start;
- // Park the idle element on segment 2 so the very first hand-off is instant too
- if (idle && segs[1]) idle.currentTime = segs[1].start;
  };
 
  useEffect(() => {
@@ -934,7 +861,7 @@ export default function ReelsCutterPage() {
  {/* Video B */}
  <video
  ref={videoBRef}
- src={videoUrl ?? undefined}
+ /* No src: a loaded second element competes for the decoder budget */
  onTimeUpdate={handleTimeUpdate}
  onPlay={() => { if (activeIsARef.current) return; if (!warmingUpRef.current) setPaused(false); startLoop(); }}
  onSeeked={(e) => {
