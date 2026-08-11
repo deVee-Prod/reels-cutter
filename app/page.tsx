@@ -28,6 +28,14 @@ const PREVIEW_SCALE_MOBILE = 1.5; // 360p * 1.5 = 540p canvas — a quarter of t
 // Gap threshold — if silence between two words >= this, force a group break
 const GAP_BREAK_THRESHOLD = 0.5;
 
+// Shortest silence worth cutting out. Below roughly a fifth of a second a gap is the
+// pause inside a sentence rather than between two of them, and removing it makes
+// speech sound clipped.
+const SILENCE_MIN_GAP = 0.25;
+// 0 keeps everything but the deepest silence, 1 cuts anything that is not clearly
+// louder than the room. Mid-scale suits a phone recorded indoors.
+const CUT_SENSITIVITY = 0.5;
+
 /** Group words into lines of *up to* `maxPerLine` words.
  * A new group starts whenever:
  * 1. The current group already has `maxPerLine` words, OR
@@ -50,6 +58,108 @@ function buildWordGroups<T extends { start: number; end: number; forceBreak?: bo
 }
 
 
+
+// ── Silence detection ───────────────────────────────────────────────────────────
+// Whisper is a transcription model. Its word timestamps are alignment estimates, not
+// measurements of when sound starts and stops, and they are least reliable at exactly
+// the boundaries a cut lands on. The decoded samples are already in memory here for
+// the waveform, so measure the audio instead of asking a language model about it.
+
+const FRAME_SEC = 0.01; // 10ms hop — fine enough to land a cut inside a consonant
+const PAD_IN = 0.08;    // keep a breath before the first sound of a segment
+const PAD_OUT = 0.12;   // and let the tail of the last word ring out
+
+/** Speech/silence segmentation by adaptive energy gating.
+ *
+ *  The threshold is derived from the recording's own level distribution rather than
+ *  fixed in advance: the quiet end of the distribution is this room's noise floor and
+ *  the loud end is this person's voice, so a room with air conditioning in it lands on
+ *  a different threshold than a treated one without anybody having to touch a dial.
+ *
+ *  Two thresholds, not one. Sound has to clear the higher one to open a segment and
+ *  stay under the lower one to close it, so level wobbling across a single line cannot
+ *  shred the audio into fragments. */
+function detectSpeechSegments(
+ channel: Float32Array,
+ sampleRate: number,
+ minSilence: number,
+ sensitivity: number,
+): { start: number; end: number | null }[] {
+ const hop = Math.max(1, Math.round(sampleRate * FRAME_SEC));
+ const win = hop * 2;
+ const frameCount = Math.floor((channel.length - win) / hop);
+ if (frameCount <= 2) return [{ start: 0, end: null }];
+
+ const db = new Float32Array(frameCount);
+ for (let i = 0; i < frameCount; i++) {
+ let sum = 0;
+ const off = i * hop;
+ for (let j = 0; j < win; j++) {
+ const s = channel[off + j];
+ sum += s * s;
+ }
+ db[i] = 10 * Math.log10(sum / win + 1e-12);
+ }
+
+ const sorted = Float32Array.from(db).sort();
+ const percentile = (p: number) =>
+ sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)))];
+ const noiseFloor = percentile(0.10);
+ const speechLevel = percentile(0.95);
+ const range = Math.max(6, speechLevel - noiseFloor);
+
+ const openAt = noiseFloor + range * (0.25 + 0.35 * sensitivity);
+ const closeAt = noiseFloor + range * (0.15 + 0.25 * sensitivity);
+
+ const minSilenceFrames = Math.max(1, Math.round(minSilence / FRAME_SEC));
+ const minSegment = 0.12;
+
+ const found: { start: number; end: number | null }[] = [];
+ let inSpeech = false;
+ let segStart = 0;
+ let quietRun = 0;
+ let loudRun = 0;
+
+ for (let i = 0; i < frameCount; i++) {
+ const t = i * FRAME_SEC;
+ if (!inSpeech) {
+ if (db[i] > openAt) {
+ loudRun++;
+ // Two frames above the line, so a single click or lip smack cannot open a segment
+ if (loudRun >= 2) {
+ inSpeech = true;
+ segStart = Math.max(0, t - loudRun * FRAME_SEC - PAD_IN);
+ quietRun = 0;
+ }
+ } else {
+ loudRun = 0;
+ }
+ } else if (db[i] < closeAt) {
+ quietRun++;
+ if (quietRun >= minSilenceFrames) {
+ const end = t - quietRun * FRAME_SEC + PAD_OUT;
+ if (end - segStart >= minSegment) found.push({ start: segStart, end });
+ inSpeech = false;
+ loudRun = 0;
+ quietRun = 0;
+ }
+ } else {
+ quietRun = 0;
+ }
+ }
+ if (inSpeech) found.push({ start: segStart, end: null });
+ if (found.length === 0) return [{ start: 0, end: null }];
+
+ // Padding can push two segments into each other; fold those back together
+ const merged: { start: number; end: number | null }[] = [];
+ for (const seg of found) {
+ const prev = merged[merged.length - 1];
+ if (prev && prev.end !== null && seg.start <= prev.end) prev.end = seg.end;
+ else merged.push({ ...seg });
+ }
+ merged[merged.length - 1].end = null; // run the last segment to the end of the video
+ return merged;
+}
 
 function remapToExportTime(
  t: number,
@@ -649,19 +759,20 @@ export default function ReelsCutterPage() {
  await ffmpeg.exec(['-i', 'input.mov', '-vn', '-ar', '16000', '-ac', '1', 'whisper.mp3']);
  const audioData = await ffmpeg.readFile('whisper.mp3');
  const audioRawBuffer = (audioData as any).buffer as ArrayBuffer;
- const audioBlob = new Blob([audioRawBuffer], { type: 'audio/mpeg' });
- const form = new FormData();
- form.append('video', audioBlob, 'audio.mp3');
- const whisperPromise = fetch('/api/whisper', { method: 'POST', body: form });
 
- // Generate waveform in parallel
- (async () => {
+ // One decode feeds both the waveform and the cut detection. No network, so the
+ // cuts are ready before the preview has finished encoding.
+ setStatus("Listening for silence...");
+ let detected: { start: number; end: number | null }[] | null = null;
  try {
  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
  const actx = new AudioCtx();
  const decoded = await actx.decodeAudioData(audioRawBuffer.slice());
  actx.close();
  const ch = decoded.getChannelData(0);
+
+ detected = detectSpeechSegments(ch, decoded.sampleRate, SILENCE_MIN_GAP, CUT_SENSITIVITY);
+
  const W = 1200, H = 56;
  const wc = document.createElement('canvas');
  wc.width = W; wc.height = H;
@@ -675,8 +786,8 @@ export default function ReelsCutterPage() {
  wctx.fillRect(i, (H - h) / 2, 1, h);
  }
  setWaveformBg(wc.toDataURL());
- } catch { /* waveform is optional */ }
- })();
+ } catch { /* fall back to one uncut segment below */ }
+
  setStatus("Creating preview...");
  // -g 5: a seek has to decode forward from the previous keyframe, so the gap between
  // keyframes is the cost of every jump between segments. Five frames instead of
@@ -685,20 +796,15 @@ export default function ReelsCutterPage() {
  await ffmpeg.exec(['-i', 'input.mov', '-vf', 'scale=-2:360', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-g', '5', '-keyint_min', '5', '-c:a', 'copy', 'preview.mp4']);
  const previewData = await ffmpeg.readFile('preview.mp4');
  setVideoUrl(URL.createObjectURL(new Blob([(previewData as any).buffer], { type: 'video/mp4' })));
- setStatus("Whisper is analyzing...");
- const res = await whisperPromise;
- const data = await res.json();
- 
- if (data.segments) {
- setSegments(data.segments);
- if (data.words) setSubtitleWords(data.words);
- 
+
+ const segs = detected ?? [{ start: 0, end: null }];
+ setSegments(segs);
+
  setStatus("Preparing edit...");
  setProgress(0);
- await warmupSegments(data.segments);
+ await warmupSegments(segs);
  setStatus("Review Edit");
- }
- } catch (e) {
+ } catch {
  setStatus("Error");
  } finally {
  setProcessing(false);
@@ -1378,7 +1484,7 @@ export default function ReelsCutterPage() {
 
  <div className="flex justify-center items-center gap-3">
  <button onClick={() => setZoomMode(true)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>Zoom</button>
- {subtitleWords.length > 0 && (
+ {segments && segments.length > 0 && (
  <button onClick={finishCutting} disabled={processing} className="px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/30 transition-colors">Done Cutting →</button>
  )}
  </div>
