@@ -202,7 +202,10 @@ export default function ReelsCutterPage() {
  // Deleting or dragging a segment shifts every index, so the parked element is stale
  useEffect(() => { segmentsRef.current = segments; prerolledIdxRef.current = -1; }, [segments]);
  useEffect(() => { durationRef.current = duration; }, [duration]);
- useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
+ // The cut-review videos unmount when the subtitle editor takes over, so their
+ // onPause never fires and nothing else ever stopped this loop — it kept asking for
+ // frames just to return early on every one of them. Stop it at the transition.
+ useEffect(() => { cutDoneRef.current = cutDone; if (cutDone) stopLoop(); }, [cutDone]);
  useEffect(() => { fontFamilyRef.current = fontFamily; }, [fontFamily]);
  useEffect(() => { subtitlePosRef.current = subtitlePos; }, [subtitlePos]);
  useEffect(() => { wordsPerLineRef.current = wordsPerLine; }, [wordsPerLine]);
@@ -301,7 +304,7 @@ export default function ReelsCutterPage() {
  const startLoop = () => {
  stopLoop();
  const tick = () => {
- if (cutDoneRef.current) { rafRef.current = requestAnimationFrame(tick); return; }
+ if (cutDoneRef.current) { rafRef.current = null; return; }
  const v = getAV();
  const segs = segmentsRef.current;
  const dur = durationRef.current;
