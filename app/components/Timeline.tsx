@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 const PX_PER_SEC = 180;
 const TRACK_HEIGHT = 56;
@@ -241,6 +241,7 @@ export default function Timeline({
     const pending = pendingMoveRef.current;
     if (!pending) return;
     pendingMoveRef.current = null;
+    if (perfOnRef.current) commitStartRef.current = performance.now();
     onWordTimingChangeRef.current(pending.chunkIndex, pending.wordIndex, pending.patch);
     setTooltip(pending.tooltip);
   }
@@ -420,8 +421,58 @@ export default function Timeline({
   function onScrollbarPointerUp() { scrollDragRef.current = null; }
   function onContainerScroll() { userScrolledAt.current = performance.now(); syncScrollThumb(); }
 
+  // ── Drag performance probe — enabled by adding ?perf=1 to the URL ────────────
+  // Frame time is what the browser actually spent; commit time is how much of that
+  // was React re-rendering. Close together means the cost is JavaScript. Frame time
+  // much larger than commit means the cost is layout, paint or compositing instead.
+  const perfOnRef = useRef(false);
+  const commitStartRef = useRef(0);
+  const commitMsRef = useRef(0);
+  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string } | null>(null);
+
+  useEffect(() => {
+    perfOnRef.current = new URLSearchParams(window.location.search).has('perf');
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!perfOnRef.current || !commitStartRef.current) return;
+    commitMsRef.current = performance.now() - commitStartRef.current;
+    commitStartRef.current = 0;
+  });
+
+  useEffect(() => {
+    if (!drag || !perfOnRef.current) return;
+    let raf = 0;
+    let last = performance.now();
+    let samples: number[] = [];
+    const tick = () => {
+      const now = performance.now();
+      samples.push(now - last);
+      last = now;
+      if (samples.length >= 15) {
+        const c = document.querySelector('canvas');
+        setPerfStats({
+          avg: samples.reduce((a, b) => a + b, 0) / samples.length,
+          max: Math.max(...samples),
+          commit: commitMsRef.current,
+          canvas: c ? `${c.width}\u00d7${c.height}` : '\u2014',
+        });
+        samples = [];
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drag]);
+
   return (
     <div>
+      {perfOnRef.current && perfStats && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 13px/1.5 ui-monospace, monospace', padding: '8px 10px', textAlign: 'left', direction: 'ltr' }}>
+          <div>frame {perfStats.avg.toFixed(1)}ms avg &nbsp; {perfStats.max.toFixed(0)}ms max</div>
+          <div>react {perfStats.commit.toFixed(1)}ms &nbsp; blocks {flatWords.length} &nbsp; canvas {perfStats.canvas}</div>
+        </div>
+      )}
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#D4AF37]">
           Timeline
