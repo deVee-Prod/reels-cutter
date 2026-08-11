@@ -122,6 +122,8 @@ export default function ReelsCutterPage() {
  const segmentsRef = useRef<{ start: number; end: number | null }[] | null>(null);
  const durationRef = useRef<number>(0);
  const programmaticSeekRef = useRef(false);
+ // Segment index the idle <video> is currently parked one step ahead of (-1 = nothing parked)
+ const prerolledIdxRef = useRef(-1);
  const warmingUpRef = useRef(false);
  const seekBarRef = useRef<HTMLDivElement>(null);
  const seekDraggingRef = useRef(false);
@@ -188,7 +190,8 @@ export default function ReelsCutterPage() {
  }, []);
 
  // ── Sync refs ──
- useEffect(() => { segmentsRef.current = segments; }, [segments]);
+ // Deleting or dragging a segment shifts every index, so the parked element is stale
+ useEffect(() => { segmentsRef.current = segments; prerolledIdxRef.current = -1; }, [segments]);
  useEffect(() => { durationRef.current = duration; }, [duration]);
  useEffect(() => { cutDoneRef.current = cutDone; }, [cutDone]);
  useEffect(() => { fontFamilyRef.current = fontFamily; }, [fontFamily]);
@@ -229,6 +232,56 @@ export default function ReelsCutterPage() {
  }
  };
 
+ /** Seek the visible element and wait for it to settle. Every frame between the
+  * request and the 'seeked' event is a frozen picture — this is the stutter, and
+  * it is now only the fallback path. */
+ const seekActiveTo = (target: number) => {
+ const v = getAV();
+ if (!v) return;
+ programmaticSeekRef.current = true;
+ v.currentTime = target;
+ const done = () => { startLoop(); };
+ const fallback = setTimeout(done, 800);
+ v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
+ };
+
+ /** Park the idle element on a segment's first frame while the other one plays.
+  * The decode happens off-screen, so the later hand-off costs nothing visible. */
+ const prerollTo = (time: number) => {
+ const bv = getBV();
+ if (!bv) return;
+ if (!bv.paused) bv.pause();
+ if (Math.abs(bv.currentTime - time) > 0.05) bv.currentTime = time;
+ };
+
+ /** Hand playback to the idle element, already sitting on this segment's start:
+  * flip which one is visible instead of seeking. Falls back to seekActiveTo
+  * whenever the idle element isn't parked yet or autoplay refuses the handover,
+  * so the worst case is exactly the old behaviour. */
+ const swapToSegment = (segIdx: number, segs: { start: number; end: number | null }[]) => {
+ const seg = segs[segIdx];
+ const cur = getAV();
+ const nxt = getBV();
+ const parked = !!nxt && nxt.readyState >= 2 && Math.abs(nxt.currentTime - seg.start) < 0.12;
+
+ if (!cur || !nxt || !parked) { seekActiveTo(seg.start); return; }
+
+ activeIsARef.current = !activeIsARef.current;
+ setActiveIsA(activeIsARef.current);
+ prerolledIdxRef.current = segIdx;
+
+ nxt.play().then(() => {
+ cur.pause();
+ const following = segs[segIdx + 1];
+ if (following) prerollTo(following.start);
+ startLoop();
+ }).catch(() => {
+ activeIsARef.current = !activeIsARef.current;
+ setActiveIsA(activeIsARef.current);
+ seekActiveTo(seg.start);
+ });
+ };
+
  const startLoop = () => {
  stopLoop();
  const tick = () => {
@@ -240,23 +293,23 @@ export default function ReelsCutterPage() {
  const t = v.currentTime;
  const inSeg = segs.find(s => t >= s.start - 0.1 && t <= (s.end ?? dur));
 
- const seekTo = (target: number) => {
- programmaticSeekRef.current = true;
- v.currentTime = target;
- const done = () => { startLoop(); };
- const fallback = setTimeout(done, 800);
- v.addEventListener('seeked', () => { clearTimeout(fallback); done(); }, { once: true });
- };
-
  if (!inSeg) {
  const next = segs.filter(s => s.start > t).sort((a, b) => a.start - b.start)[0];
- if (next) seekTo(next.start); else v.pause();
+ if (next) seekActiveTo(next.start); else v.pause();
  rafRef.current = null; return;
  }
 
+ const idx = segs.indexOf(inSeg);
+
+ // Keep the idle element one segment ahead of wherever playback currently is
+ if (prerolledIdxRef.current !== idx) {
+ prerolledIdxRef.current = idx;
+ const next = segs[idx + 1];
+ if (next) prerollTo(next.start);
+ }
+
  if (inSeg.end !== null && t >= inSeg.end - 0.08) {
- const nextSeg = segs[segs.indexOf(inSeg) + 1];
- if (nextSeg) seekTo(nextSeg.start); else v.pause();
+ if (segs[idx + 1]) swapToSegment(idx + 1, segs); else v.pause();
  rafRef.current = null; return;
  }
 
@@ -503,6 +556,7 @@ export default function ReelsCutterPage() {
  setStatus("Ready");
  activeIsARef.current = true;
  setActiveIsA(true);
+ prerolledIdxRef.current = -1;
  historyRef.current = [];
  cutHistoryRef.current = [];
  setCanUndo(false);
@@ -536,8 +590,23 @@ export default function ReelsCutterPage() {
  video.pause();
  }
  video.muted = false;
+
+ // Unlock the second element for programmatic playback. Browsers only allow
+ // play() on an element that has already played once, and the hand-off between
+ // segments calls play() with no user gesture of its own.
+ const idle = videoBRef.current;
+ if (idle) {
+ idle.muted = true;
+ await idle.play().catch(() => {});
+ idle.pause();
+ idle.muted = false;
+ }
+
  warmingUpRef.current = false;
+ prerolledIdxRef.current = -1;
  video.currentTime = segs[0].start;
+ // Park the idle element on segment 2 so the very first hand-off is instant too
+ if (idle && segs[1]) idle.currentTime = segs[1].start;
  };
 
  useEffect(() => {
