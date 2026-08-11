@@ -1078,10 +1078,10 @@ export default function ReelsCutterPage() {
  </div>
  )}
 
- {/* Kept on screen while the upload is being analysed. Hiding these the moment a
- file was picked left the panel empty but for a status line, which reels-motion
- and reels-dubber never do — their settings stay put and stay adjustable. */}
- {!segments && (
+ {/* Appears once a file is chosen and stays through the analysis, so the setting is
+ adjustable while the tool works. Held back on the empty screen, where there is
+ nothing yet for it to apply to. */}
+ {videoFile && !segments && (
  <>
  {/* Auto Zoom Settings */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
