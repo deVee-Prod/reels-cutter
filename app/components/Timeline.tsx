@@ -260,6 +260,10 @@ export default function Timeline({
           longPressTimerRef.current = null;
         }
       }
+      if (perfOnRef.current) {
+        moveCountRef.current++;
+        pointerXRef.current = e.clientX;
+      }
       const words = chunksRef.current[drag.fw.chunkIndex].words;
       const dur = safeDurationRef.current;
       let patch: Partial<Word> = {};
@@ -440,7 +444,12 @@ export default function Timeline({
   // How far the clamp had to pull the pointer back on the last move. When a drag feels
   // unresponsive while frame time is a steady 60fps, this is the thing to look at.
   const clampRef = useRef('—');
-  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string } | null>(null);
+  // Pointer events seen since the last report, and where the pointer was last seen.
+  // Comparing that against where the dragged edge actually sits says whether the
+  // block is keeping up, and how many events the browser is delivering.
+  const moveCountRef = useRef(0);
+  const pointerXRef = useRef(0);
+  const [perfStats, setPerfStats] = useState<{ avg: number; max: number; commit: number; canvas: string; clamp: string; rate: number; gap: number } | null>(null);
 
   useEffect(() => {
     perfOnRef.current = new URLSearchParams(window.location.search).has('perf');
@@ -463,7 +472,19 @@ export default function Timeline({
       last = now;
       if (samples.length >= 15) {
         const c = document.querySelector('canvas');
+        const elapsed = samples.reduce((a, b) => a + b, 0);
+        const rate = Math.round((moveCountRef.current / elapsed) * 1000);
+        moveCountRef.current = 0;
+        let gap = 0;
+        const track = trackRef.current;
+        const w = chunksRef.current[drag.fw.chunkIndex]?.words[drag.fw.wordIndex];
+        if (track && w) {
+          const edgeTime = drag.edge === 'right' ? w.end : w.start;
+          gap = pointerXRef.current - (track.getBoundingClientRect().left + edgeTime * PX_PER_SEC);
+        }
         setPerfStats({
+          rate,
+          gap: Math.round(gap),
           avg: samples.reduce((a, b) => a + b, 0) / samples.length,
           max: Math.max(...samples),
           commit: commitMsRef.current,
@@ -485,6 +506,9 @@ export default function Timeline({
           <div>frame {perfStats.avg.toFixed(1)}ms avg &nbsp; {perfStats.max.toFixed(0)}ms max</div>
           <div>react {perfStats.commit.toFixed(1)}ms &nbsp; blocks {flatWords.length} &nbsp; canvas {perfStats.canvas}</div>
           <div style={{ color: perfStats.clamp.startsWith('HELD') ? '#f55' : '#0f0' }}>drag {perfStats.clamp}</div>
+          <div style={{ color: Math.abs(perfStats.gap) > 12 ? '#f55' : '#0f0' }}>
+            pointer {perfStats.rate}/s &nbsp; behind {perfStats.gap}px
+          </div>
         </div>
       )}
       <div className="mb-2 flex items-baseline justify-between">
