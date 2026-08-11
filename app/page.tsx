@@ -1353,6 +1353,14 @@ export default function ReelsCutterPage() {
  </div>
  </div>
 
+ </>
+ )}
+
+ {/* Auto Zoom, subtitle sizing and Cut Video have nothing to apply to before a file
+  exists, so they appear with the upload and stay through the analysis. The still
+  panel above belongs to the empty screen and stops there. */}
+ {videoFile && !segments && (
+ <>
  {/* Auto Zoom Settings */}
  <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-2xl px-4 py-3">
  <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold shrink-0 select-none w-16">Auto Zoom</span>
