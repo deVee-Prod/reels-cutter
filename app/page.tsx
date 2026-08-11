@@ -197,6 +197,8 @@ export default function ReelsCutterPage() {
  // before the decoder has caught up, so a swap could hand over a frame that is not
  // ready and the picture hitches anyway.
  const parkedTimeRef = useRef<number | null>(null);
+ // What the loop last did at a segment boundary, for the ?debug=1 readout
+ const lastEventRef = useRef('—');
  // Decoded samples are kept so the sliders can re-cut instantly, without decoding
  // the audio again and without going near the network.
  const audioChannelRef = useRef<Float32Array | null>(null);
@@ -270,7 +272,10 @@ export default function ReelsCutterPage() {
  `video ${v ? (v.paused ? 'paused' : 'PLAYING') : 'none'} \u00b7 t ${(v?.currentTime ?? 0).toFixed(2)}` +
  ` \u00b7 ready ${v?.readyState ?? '-'}\n` +
  `warmup ${warmingUpRef.current ? 'YES' : 'no'} \u00b7 drag ${draggingRef.current ? 'YES' : 'no'}` +
- ` \u00b7 seek ${seekDraggingRef.current ? 'YES' : 'no'}`
+ ` \u00b7 seek ${seekDraggingRef.current ? 'YES' : 'no'}\n` +
+ `in seg ${segs && v ? segs.findIndex(x => v.currentTime >= x.start - 0.1 && v.currentTime <= (x.end ?? durationRef.current)) : '-'}` +
+ ` \u00b7 ends ${(() => { const x = segs?.find(x => v && v.currentTime >= x.start - 0.1 && v.currentTime <= (x.end ?? durationRef.current)); return x ? (x.end?.toFixed(2) ?? 'END') : '-'; })()}` +
+ ` \u00b7 dur ${durationRef.current.toFixed(1)} \u00b7 ${lastEventRef.current}`
  );
  }, 250);
  return () => clearInterval(id);
@@ -326,18 +331,21 @@ export default function ReelsCutterPage() {
  const parked = !!nxt && nxt.readyState >= 2 && parkedTimeRef.current !== null
  && Math.abs(parkedTimeRef.current - seg.start) < 0.02;
 
- if (!cur || !nxt || !parked) { seekActiveTo(seg.start); return; }
+ if (!cur || !nxt || !parked) { lastEventRef.current = `seek->${seg.start.toFixed(2)}`; seekActiveTo(seg.start); return; }
 
  activeIsARef.current = !activeIsARef.current;
  setActiveIsA(activeIsARef.current);
  prerolledIdxRef.current = segIdx;
 
+ lastEventRef.current = `swap->${seg.start.toFixed(2)}`;
  nxt.play().then(() => {
+ lastEventRef.current = `swapped ${seg.start.toFixed(2)}`;
  cur.pause();
  const following = segs[segIdx + 1];
  if (following) prerollTo(following.start);
  startLoop();
  }).catch(() => {
+ lastEventRef.current = 'play REFUSED';
  activeIsARef.current = !activeIsARef.current;
  setActiveIsA(activeIsARef.current);
  seekActiveTo(seg.start);
@@ -371,7 +379,8 @@ export default function ReelsCutterPage() {
  }
 
  if (inSeg.end !== null && t >= inSeg.end - 0.08) {
- if (segs[idx + 1]) swapToSegment(idx + 1, segs); else v.pause();
+ lastEventRef.current = `boundary @${inSeg.end.toFixed(2)}`;
+ if (segs[idx + 1]) swapToSegment(idx + 1, segs); else { lastEventRef.current = 'end, paused'; v.pause(); }
  rafRef.current = null; return;
  }
 
