@@ -250,7 +250,7 @@ export default function ReelsCutterPage() {
  const c = timelineContainerRef.current;
  if (!c || zoom <= 1 || !duration) return;
  const cw = c.clientWidth;
- const ph = (currentTime / duration) * cw * zoom;
+ const ph = (currentTime / (duration || 1)) * cw * zoom;
  if (ph < c.scrollLeft + 40 || ph > c.scrollLeft + cw - 40)
  c.scrollLeft = Math.max(0, ph - cw * 0.25);
  }, [currentTime, zoom, duration, cutDone]);
@@ -917,6 +917,17 @@ export default function ReelsCutterPage() {
  Rendered before an upload too, with an empty timeline. The controls a user is
  about to reach for should already be on screen, not appear once the analysis
  finishes — which is how reels-motion and reels-dubber both behave. */}
+ </div>
+ ) : (
+ <div className="relative w-full h-[40vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
+ <label className="h-48 md:h-64 w-full flex flex-col items-center justify-center cursor-pointer space-y-4">
+ <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mx-auto text-white/20 text-xl">+</div>
+ <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold">Upload Media</p>
+ <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
+ </label>
+ </div>
+ )}
+
  {!zoomMode && (
  <div className="flex flex-col bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] p-4 md:p-6 shadow-inner gap-4 md:gap-6 w-full mb-6">
  {/* ── CUTTER MODE ── */}
@@ -988,7 +999,7 @@ export default function ReelsCutterPage() {
  </div>
  ))}
  {/* Red Draggable Playhead */}
- <div className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
+ <div className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}>
  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-4 h-4 bg-red-500 rotate-45 cursor-grab active:cursor-grabbing pointer-events-auto shadow-[0_0_8px_rgba(239,68,68,0.6)]"
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { if (!seekDraggingRef.current || !timelineRef.current) return; const av = getAV(); if (!av) return; const rect = timelineRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
@@ -1000,9 +1011,9 @@ export default function ReelsCutterPage() {
 
  <div ref={seekBarRef} className="relative w-full h-10 md:h-6 flex items-center cursor-pointer" style={{ touchAction: 'none' }} onClick={(e) => { const av = getAV(); if (!seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}>
  <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
- <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+ <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
  </div>
- <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
+ <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !seekBarRef.current || !av) return; const rect = seekBarRef.current.getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
@@ -1033,9 +1044,9 @@ export default function ReelsCutterPage() {
  onClick={(e) => { const av = getAV(); if (!av) return; const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  >
  <div className="relative w-full h-[3px] bg-white/[0.08] rounded-full pointer-events-none">
- <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+ <div className="absolute left-0 top-0 h-full bg-[#D4AF37]/50 rounded-full" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
  </div>
- <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / duration) * 100}%` }}
+ <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 md:w-3 md:h-3 rounded-full bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.45)] cursor-grab active:cursor-grabbing pointer-events-auto" style={{ left: `${(currentTime / (duration || 1)) * 100}%` }}
  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); seekDraggingRef.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
  onPointerMove={(e) => { const av = getAV(); if (!seekDraggingRef.current || !av) return; const rect = (e.currentTarget.parentElement as HTMLDivElement).getBoundingClientRect(); av.currentTime = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1)) * duration; }}
  onPointerUp={(e) => { seekDraggingRef.current = false; e.currentTarget.releasePointerCapture(e.pointerId); const av = getAV(); if (av && !av.paused) startLoop(); }}
@@ -1064,16 +1075,6 @@ export default function ReelsCutterPage() {
  <button onClick={() => setZoomMode(false)} className="w-7 h-7 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] rounded-lg text-white/50 text-sm transition-colors flex-shrink-0">←</button>
  <button onClick={() => setZoomPerCut(p => !p)} className={`px-5 py-1.5 text-[8px] uppercase tracking-widest rounded-lg border transition-colors ${zoomPerCut ? 'bg-white/[0.12] border-white/40 text-white/80' : 'bg-white/[0.04] border-white/[0.07] text-white/30 hover:text-white/50'}`}>{zoomPerCut ? 'Zoom On' : 'Zoom Off'}</button>
  </div>
- </div>
- )}
- </div>
- ) : (
- <div className="relative w-full h-[40vh] md:h-auto md:aspect-video bg-[#0c0c0c] border border-white/[0.03] rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl flex items-center justify-center">
- <label className="h-48 md:h-64 w-full flex flex-col items-center justify-center cursor-pointer space-y-4">
- <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mx-auto text-white/20 text-xl">+</div>
- <p className="text-[8px] uppercase tracking-[0.4em] text-white/20 font-bold">Upload Media</p>
- <input type="file" className="hidden" onChange={handleFileUpload} accept="video/*" />
- </label>
  </div>
  )}
 
