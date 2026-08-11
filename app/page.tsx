@@ -1311,7 +1311,10 @@ export default function ReelsCutterPage() {
  </div>
  )}
 
- {!segments && !videoFile && (
+ {/* Held back on the empty screen — Auto Zoom, subtitle sizing and Cut Video have
+  nothing to apply to before a file exists. They appear with the upload and stay
+  through the analysis. */}
+ {videoFile && !segments && (
  <>
  {/* A still likeness of the cut panel, shown only on the empty screen so the tool
   looks like itself before a file is chosen. Deliberately markup and nothing
