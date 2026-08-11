@@ -20,8 +20,12 @@ export const FONTS = [
 
 // Canvas preview renders at this fraction of the source resolution —
 // cheaper on mobile, looks identical since the canvas is CSS-scaled anyway.
-const PREVIEW_SCALE_DESKTOP = 0.3;
-const PREVIEW_SCALE_MOBILE  = 0.2;
+// Height to render the canvas at, in pixels. reels-dubber reaches these numbers by
+// scaling its full-resolution upload down by 0.3 and 0.2; expressing the target
+// directly means the same canvas comes out of any source, and reels-cutter's 360p
+// working copy is scaled *up* to meet it rather than down into an unreadable smear.
+const CANVAS_HEIGHT_DESKTOP = 576;
+const CANVAS_HEIGHT_MOBILE  = 384;
 
 // Video-to-audio sync: don't seek the video element more often than this
 const SYNC_THRESHOLD = 0.15;   // seconds of drift before correcting
@@ -135,10 +139,10 @@ export default function SubtitleEditor({
   const lastUIUpdateRef = useRef(0);
   const lastDrawTimeMsRef = useRef(0);
   // Responsive preview scale — detect once, stays stable
-  const previewScaleRef = useRef(
+  const canvasHeightRef = useRef(
     typeof window !== 'undefined' && window.innerWidth < 768
-      ? PREVIEW_SCALE_MOBILE
-      : PREVIEW_SCALE_DESKTOP
+      ? CANVAS_HEIGHT_MOBILE
+      : CANVAS_HEIGHT_DESKTOP
   );
 
   // Stable callbacks for Timeline — empty deps means same reference every render,
@@ -188,7 +192,7 @@ export default function SubtitleEditor({
 
       if (ctx && media.videoWidth > 0 && shouldDraw) {
         if (isActive) lastDrawTimeMsRef.current = now;
-        const scale = previewScaleRef.current;
+        const scale = canvasHeightRef.current / media.videoHeight;
         const targetW = Math.round(media.videoWidth * scale);
         if (canvas.width !== targetW) {
           canvas.width = targetW;
