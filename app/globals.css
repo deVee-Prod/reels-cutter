@@ -23,8 +23,15 @@ input, textarea, [contenteditable="true"] {
 }
 
 /* ה-Glow הדרמטי של deVee */
+/* `group` is Tailwind's hover-targeting utility, not a class of ours, so this rule
+   reaches every element that uses it — including each word block in the timeline.
+   With `transition: all` those blocks eased their left and width over 0.8s, so a
+   drag set the correct position instantly and the block then spent most of a second
+   travelling to it. Naming the two properties the glow actually animates keeps the
+   effect identical and stops it applying to anything that moves. */
 .group {
-  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: box-shadow 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.03) !important;
 }
 
