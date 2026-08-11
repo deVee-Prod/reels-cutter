@@ -205,7 +205,6 @@ export default function ReelsCutterPage() {
 
  // ── Cleanup RAF ──
  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
- useEffect(() => { if (window.innerWidth < 768) setZoom(8); }, []);
 
  // ── Phase 1: Timeline auto-scroll ──
  useEffect(() => {
