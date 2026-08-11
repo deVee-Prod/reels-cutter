@@ -26,6 +26,16 @@ export const metadata = {
     { rel: 'apple-touch-icon', url: '/favicon-512-v2.png', sizes: '512x512', type: 'image/png' },
   ],
 }
+// iOS zooms the page in whenever a field smaller than 16px takes focus, and leaves
+// the user to pinch back out. maximum-scale holds it at 1 for that automatic zoom;
+// pinch-to-zoom is user-initiated and Safari still allows it.
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

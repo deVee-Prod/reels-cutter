@@ -255,6 +255,27 @@ export default function ReelsCutterPage() {
  c.scrollLeft = Math.max(0, ph - cw * 0.25);
  }, [currentTime, zoom, duration, cutDone]);
 
+ // Playback state readout — add ?debug=1 to the URL. Every condition that can stop
+ // the segment loop lives in a ref, so none of it appears in React DevTools or in
+ // any number measured so far. Sampling them onto the screen says which one is up.
+ const [dbg, setDbg] = useState<string | null>(null);
+ useEffect(() => {
+ if (!new URLSearchParams(window.location.search).has('debug')) return;
+ const id = setInterval(() => {
+ const v = activeIsARef.current ? videoARef.current : videoBRef.current;
+ const segs = segmentsRef.current;
+ setDbg(
+ `loop ${rafRef.current !== null ? 'ON' : 'off'} \u00b7 segs ${segs?.length ?? 0}` +
+ `${segs?.[0] ? ` \u00b7 first ${segs[0].start.toFixed(2)}s` : ''}\n` +
+ `video ${v ? (v.paused ? 'paused' : 'PLAYING') : 'none'} \u00b7 t ${(v?.currentTime ?? 0).toFixed(2)}` +
+ ` \u00b7 ready ${v?.readyState ?? '-'}\n` +
+ `warmup ${warmingUpRef.current ? 'YES' : 'no'} \u00b7 drag ${draggingRef.current ? 'YES' : 'no'}` +
+ ` \u00b7 seek ${seekDraggingRef.current ? 'YES' : 'no'}`
+ );
+ }, 250);
+ return () => clearInterval(id);
+ }, []);
+
  // ── Phase 1: Video playback helpers ──
  const getAV = () => activeIsARef.current ? videoARef.current : videoBRef.current;
  const getBV = () => activeIsARef.current ? videoBRef.current : videoARef.current;
@@ -812,6 +833,9 @@ export default function ReelsCutterPage() {
  if (!authorized) {
  return (
  <div className="min-h-[100dvh] flex flex-col items-center text-center">
+ {dbg && (
+ <pre style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, margin: 0, background: 'rgba(0,0,0,0.88)', color: '#0f0', font: '600 12px/1.45 ui-monospace, monospace', padding: '6px 8px', textAlign: 'left', direction: 'ltr', whiteSpace: 'pre-wrap' }}>{dbg}</pre>
+ )}
  <header className="w-full relative z-20 flex flex-col items-center shrink-0 mt-8 mb-6">
  <img src="/logo.png" alt="deVee" className="w-[100px] h-[100px] mb-2 object-contain" />
  <h1 className="text-[10px] font-bold tracking-[0.5em] uppercase text-white/60">REELS CUTTER</h1>
@@ -826,10 +850,7 @@ export default function ReelsCutterPage() {
  <p className="text-white text-[11px] tracking-[0.05em] font-light uppercase">For Vertical 1080p Video</p>
  </div>
  <form onSubmit={handleLogin} className="space-y-4 bg-[#0c0c0c]/40 p-8 rounded-[24px] border border-white/5 backdrop-blur-xl w-full">
- {/* 16px is the threshold below which iOS zooms the page in on focus, leaving the
- user to pinch back out afterwards. Anything smaller here costs that. */}
- <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.3em] focus:outline-none"
- style={{ fontSize: 16 }} placeholder="ACCESS KEY" />
+ <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-3 px-4 text-white text-center tracking-[0.4em] text-[9px] focus:outline-none placeholder:text-[9px]" placeholder="ACCESS KEY" />
  <button type="submit" className="w-full py-3 bg-[#D4AF37] text-black rounded-xl uppercase tracking-[0.3em] text-[8px] font-black">Enter</button>
  </form>
  </main>
