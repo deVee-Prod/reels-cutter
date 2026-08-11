@@ -17,9 +17,13 @@ const FONTS = [
 ] as const;
 type FontId = typeof FONTS[number]['id'];
 
-// Canvas preview scale — higher to counteract 360p base video and render crisp text
+// Canvas preview scale — the 360p working copy is scaled up so subtitle text stays
+// crisp. The canvas is not redrawn while the timeline is being dragged, but the
+// browser still composites it every frame, and at 3x on a phone that layer is eight
+// times the size of the equivalent one in reels-dubber, where dragging is smooth.
+// Desktop keeps 3.0; it has never shown the lag.
 const PREVIEW_SCALE_DESKTOP = 3.0; // 360p * 3 = 1080p canvas
-const PREVIEW_SCALE_MOBILE = 3.0; // 360p * 3 = 1080p canvas
+const PREVIEW_SCALE_MOBILE = 1.5; // 360p * 1.5 = 540p canvas — a quarter of the pixels
 
 // Gap threshold — if silence between two words >= this, force a group break
 const GAP_BREAK_THRESHOLD = 0.5;
