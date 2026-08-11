@@ -735,17 +735,38 @@ export default function ReelsCutterPage() {
  const cutData = await ffmpegRef.current.readFile('cut_preview.mp4');
  const cutUrl = URL.createObjectURL(new Blob([(cutData as any).buffer], { type: 'video/mp4' }));
 
- // Remap subtitle timestamps to cut timeline.
- // Words spoken inside a removed stretch have had their audio deleted, so they must
- // not survive as subtitles. remapToExportTime collapses everything outside a kept
- // segment onto a single instant, which used to leave them as unreadable slivers
- // pinned at the 0.05s floor — captions for words the video no longer says.
- // Deliberately lenient: any overlap at all keeps the word. Half a word still
- // reaches the viewer's ears, so it should still be captioned — only words that
- // fall entirely inside a removed stretch are dropped.
+ // Ask Whisper about the video that now exists, rather than calculating what it
+ // would probably have said. Arithmetic remapping only ever approximated this: it
+ // squashes any word that straddles a cut, and leaves every word ending where the
+ // silence used to begin, which is what makes these blocks so much narrower than
+ // the ones in reels-dubber. Transcribing the cut audio puts this editor in exactly
+ // the state reels-dubber is in — a real file, and timings straight from Whisper.
+ let words: typeof subtitleWords | null = null;
+ try {
+ setStatus("Re-reading the cut...");
+ setProgress(0);
+ await ffmpegRef.current.exec(['-y', '-i', 'cut_preview.mp4', '-vn', '-ar', '16000', '-ac', '1', 'cut_audio.mp3']);
+ const cutAudio = await ffmpegRef.current.readFile('cut_audio.mp3');
+ const form = new FormData();
+ form.append('video', new Blob([(cutAudio as any).buffer], { type: 'audio/mpeg' }), 'audio.mp3');
+ const res = await fetch('/api/whisper', { method: 'POST', body: form });
+ if (res.ok) {
+ const data = await res.json();
+ if (Array.isArray(data.words) && data.words.length > 0) words = data.words;
+ }
+ await ffmpegRef.current.deleteFile('cut_audio.mp3').catch(() => {});
+ } catch {
+ // Fall through to the remap below — a failed transcription must not cost the cut
+ }
+
+ // Fallback, and the behaviour every previous build shipped: map the existing
+ // timings onto the cut timeline. Lenient about what survives — any overlap at all
+ // keeps the word, since half a word is still audible. Only words that fall
+ // entirely inside a removed stretch are dropped, because their audio is gone.
+ if (!words) {
  const survivesCut = (w: { start: number; end: number }) =>
  segments.some(s => w.end > s.start && w.start < (s.end ?? duration));
- const remapped = subtitleWords.filter(survivesCut).map(w => ({
+ words = subtitleWords.filter(survivesCut).map(w => ({
  ...w,
  start: Number(remapToExportTime(w.start, segments, duration).toFixed(3)),
  end: Number(Math.max(
@@ -753,13 +774,14 @@ export default function ReelsCutterPage() {
  remapToExportTime(w.end, segments, duration)
  ).toFixed(3)),
  }));
+ }
 
  // Save originals for "go back"
  origVideoUrlRef.current = videoUrl;
  origSubtitleWordsRef.current = subtitleWords;
 
  setVideoUrl(cutUrl);
- setSubtitleWords(remapped);
+ setSubtitleWords(words);
  setCutDone(true);
  setPaused(true);
  currentTimeRef.current = 0;

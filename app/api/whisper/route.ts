@@ -32,22 +32,7 @@ export async function POST(req: NextRequest) {
     const whisperData = await whisperRes.json();
     const words: { word: string; start: number; end: number }[] = whisperData.words ?? [];
 
-    // ─── DEBUG ───────────────────────────────────────────────
-    console.log('=== WHISPER DEBUG ===');
-    console.log('Total words:', words.length);
-    console.log('Duration:', whisperData.duration);
-    words.forEach((w, i) => {
-      const gap = i > 0 ? (w.start - words[i - 1].end).toFixed(2) : '0';
-      console.log(`[${i}] "${w.word}" ${w.start.toFixed(2)}s → ${w.end.toFixed(2)}s | gap before: ${gap}s`);
-    });
-    // ─────────────────────────────────────────────────────────
-
     const segments = buildSpeechSegments(words, 0.2);
-
-    console.log('=== SEGMENTS ===');
-    segments.forEach((s, i) => {
-      console.log(`[${i}] start: ${s.start.toFixed(2)}s end: ${s.end !== null ? s.end.toFixed(2) + 's' : 'END'}`);
-    });
 
     const subtitleWords = words.map((w, index) => {
       const start = Math.max(0, w.start - 0.04);
