@@ -1144,7 +1144,6 @@ export default function ReelsCutterPage() {
 
  {segments && (
  <div className="flex flex-col items-center gap-1 mt-2 mb-2">
- <p className="text-white/60 text-[8px] tracking-[0.12em] font-light">Don&apos;t worry about the quality — it&apos;s just a preview</p>
  <p className="text-white/60 text-[8px] tracking-[0.05em] font-light uppercase">Do not worry about quality, this is only a preview</p>
  </div>
  )}
@@ -1359,11 +1358,6 @@ export default function ReelsCutterPage() {
  {/* Auto Zoom, subtitle sizing and Cut Video have nothing to apply to before a file
   exists, so they appear with the upload and stay through the analysis. The still
   panel above belongs to the empty screen and stops there. */}
- {!segments && videoFile && (
- <div className="w-full text-center text-[10px] uppercase tracking-[0.4em] text-white/20 font-bold py-5">
- Waiting for Auto Cut...
- </div>
- )}
  {/* Cutting leads to the subtitle editor, and export lives there, once there is
   something to preview. Offering it here asked for a decision about subtitles
   before any had been seen. */}
